@@ -35,14 +35,9 @@ class ContentController {
       this.currentChatConfig = null;
     }
 
-    const headerEl = this.adapter.getHeaderElement();
+    // رندر تنها یک دکمه تنظیم رمزنگاری در نوار چت (کامپوزر)
     const composerEl = this.adapter.getComposerElement();
-
-    LockButtonUI.render(headerEl, composerEl, this.currentChatId, this.currentChatConfig, (newState) => {
-      if (this.currentChatConfig) {
-        this.currentChatConfig.enabled = newState;
-      }
-    });
+    LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig);
 
     this.scanAllMessages();
   }
@@ -62,23 +57,16 @@ class ContentController {
     window.addEventListener("popstate", checkUrlChange);
     window.addEventListener("hashchange", checkUrlChange);
 
-    // بررسی دورهای و MutationObserver برای تغییرات PushState در React Router
+    // بررسی دورهای برای حفظ دکمه تنظیم در صورت Re-render کامپوزر
     setInterval(() => {
       checkUrlChange();
 
-      // اطمینان از حضور دکمه قفل در صورت Re-render شدن نوار چت یا هدر توسط بله
-      const hasComposerBtn = document.getElementById(LockButtonUI.COMPOSER_BUTTON_ID);
-      const hasHeaderBtn = document.getElementById(LockButtonUI.HEADER_BUTTON_ID);
-      const hasFloatingBtn = document.getElementById(LockButtonUI.FLOATING_BUTTON_ID);
-
-      if (this.currentChatId && !hasComposerBtn && !hasHeaderBtn && !hasFloatingBtn) {
-        const headerEl = this.adapter.getHeaderElement();
+      const hasBtn = document.getElementById(LockButtonUI.SETTINGS_BUTTON_ID);
+      if (this.currentChatId && !hasBtn) {
         const composerEl = this.adapter.getComposerElement();
-        LockButtonUI.render(headerEl, composerEl, this.currentChatId, this.currentChatConfig, (newState) => {
-          if (this.currentChatConfig) {
-            this.currentChatConfig.enabled = newState;
-          }
-        });
+        if (composerEl) {
+          LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig);
+        }
       }
     }, 600);
   }
@@ -110,17 +98,15 @@ class ContentController {
   scanAllMessages() {
     const elements = this.adapter.getMessageElements();
     for (const el of elements) {
-      if (el.textContent && el.textContent.includes(CONSTANTS.PREFIX)) {
-        MessageDecorator.processElement(el, this.currentChatConfig);
-      }
+      MessageDecorator.processElement(el, this.currentChatConfig);
     }
   }
 
   /**
-   * رهگیری ارسال پیام (کلید Enter و کلیک روی دکمه ارسال/ویرایش) در فاز Capture
+   * رهگیری ارسال پیام (کلید Enter و کلیک موس روی دکمه ارسال) در فاز Capture
    */
   setupSendInterceptors() {
-    // ۱. رهگیری کلید Enter روی فیلد ورودی
+    // ۱. رهگیری کلید Enter روی فیلد ورودی پیام
     document.addEventListener("keydown", async (e) => {
       if (this.isEncryptingAndSending) return;
 
@@ -129,24 +115,35 @@ class ContentController {
         if (!inputEl || !inputEl.contains(e.target)) return;
 
         if (this.shouldIntercept()) {
+          const rawText = this.adapter.getInputValue(inputEl);
+          if (!rawText) return;
+
           e.preventDefault();
           e.stopImmediatePropagation();
-          await this.encryptAndTriggerSend(inputEl, "enter");
+          await this.encryptAndTriggerSend(inputEl, rawText, null);
         }
       }
     }, true); // Capture phase
 
-    // ۲. رهگیری کلیک روی دکمه Send
+    // ۲. رهگیری کلیک موس روی دکمه ارسال پیام
     document.addEventListener("click", async (e) => {
       if (this.isEncryptingAndSending) return;
 
-      const sendBtn = this.adapter.getSendButtonElement();
-      if (sendBtn && (sendBtn === e.target || sendBtn.contains(e.target))) {
+      // بررسی اینکه آیا المان کلیک‌شده دکمه ارسال است یا خیر
+      const isSendBtn = this.adapter.isSendButton(e.target);
+      if (isSendBtn) {
         const inputEl = this.adapter.getInputElement();
-        if (inputEl && this.shouldIntercept()) {
+        if (!inputEl) return;
+
+        if (this.shouldIntercept()) {
+          const rawText = this.adapter.getInputValue(inputEl);
+          if (!rawText) return;
+
           e.preventDefault();
           e.stopImmediatePropagation();
-          await this.encryptAndTriggerSend(inputEl, "click", sendBtn);
+
+          const clickedBtn = e.target.closest('button, [role="button"]');
+          await this.encryptAndTriggerSend(inputEl, rawText, clickedBtn);
         }
       }
     }, true); // Capture phase
@@ -156,11 +153,8 @@ class ContentController {
     return Boolean(this.currentChatConfig && this.currentChatConfig.enabled && this.currentChatConfig.password);
   }
 
-  async encryptAndTriggerSend(inputEl, triggerType, sendBtn = null) {
-    const rawText = this.adapter.getInputValue(inputEl);
-    if (!rawText) return;
-
-    // بررسی برخورد پیشوند (اگر کاربر خودش متنی با BALEENC1: وارد کرده باشد)
+  async encryptAndTriggerSend(inputEl, rawText, sendBtn) {
+    // اگر متن تصادفاً قبلاً رمز شده بود
     if (rawText.startsWith(CONSTANTS.PREFIX)) {
       alert(CONSTANTS.MESSAGES.PREFIX_COLLISION_WARN);
       return;
@@ -170,36 +164,39 @@ class ContentController {
       this.isEncryptingAndSending = true;
       const ciphertext = await CryptoEngine.encrypt(rawText, this.currentChatConfig.password);
 
-      // ذخیره در کش نشست برای نمایش فوری در صفحه خود کاربر
+      // ذخیره در کش نشست برای نمایش فوری در صفحه خود فرستنده
       MessageDecorator.cachePlaintext(ciphertext, rawText);
 
-      // جایگزینی متن در فیلد ورودی
+      // جایگزینی متن ورودی با پیام رمزنگاری‌شده
       this.adapter.setInputValue(inputEl, ciphertext);
 
-      // تاخیر کوتاه برای ثبت شدن State در React و سپس ارسال واقعی
+      // تأخیر ۵۰ میلی‌ثانیه‌ای برای ثبت شدن State در React بله
+      await new Promise(r => setTimeout(r, 50));
+
+      const btn = sendBtn || this.adapter.getSendButtonElement();
+      if (btn) {
+        btn.click();
+      } else {
+        inputEl.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true
+        }));
+      }
+
+      // اطمینان از پاکسازی فیلد ورودی تا متن رمزشده در جعبه پیام باقی نماند
       setTimeout(() => {
-        if (triggerType === "click" && sendBtn) {
-          sendBtn.click();
-        } else {
-          const btn = this.adapter.getSendButtonElement();
-          if (btn) {
-            btn.click();
-          } else {
-            inputEl.dispatchEvent(new KeyboardEvent("keydown", {
-              key: "Enter",
-              code: "Enter",
-              keyCode: 13,
-              which: 13,
-              bubbles: true
-            }));
-          }
+        const currentVal = this.adapter.getInputValue(inputEl);
+        if (currentVal === ciphertext) {
+          this.adapter.setInputValue(inputEl, "");
         }
-        setTimeout(() => {
-          this.isEncryptingAndSending = false;
-        }, 50);
-      }, 30);
+        this.isEncryptingAndSending = false;
+      }, 150);
     } catch (err) {
-      console.error("[Bale E2EE] Encryption failed:", err);
+      console.error("[Bale E2EE] Encryption or send failed:", err);
       this.isEncryptingAndSending = false;
     }
   }

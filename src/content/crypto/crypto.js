@@ -20,10 +20,12 @@ export class CryptoEngine {
   }
 
   /**
-   * تبدیل Base64 به Uint8Array
+   * تبدیل Base64 به Uint8Array با پاکسازی کاراکترهای نامعتبر
    */
   static base64ToBuffer(base64) {
-    const binary = atob(base64);
+    // پاکسازی فاصله‌ها، شکستگی‌های خط و کاراکترهای نامرئی یونیکد/BiDi
+    const cleanBase64 = base64.replace(/[^A-Za-z0-9+/=]/g, '');
+    const binary = atob(cleanBase64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
@@ -117,17 +119,23 @@ export class CryptoEngine {
   }
 
   /**
-   * رمزگشایی متن
+   * رمزگشایی متن با پشتیبانی از استخراج هوشمند و پاکسازی کاراکترهای مخرب
    */
   static async decrypt(payload, password) {
-    if (!payload || !payload.startsWith(CONSTANTS.PREFIX)) {
+    if (!payload || !payload.includes(CONSTANTS.PREFIX)) {
       throw new Error("Invalid prefix");
     }
 
-    const base64Data = payload.slice(CONSTANTS.PREFIX.length).trim();
+    // استخراج بخش Base64 با Regex بدون وابستگی به کاراکترهای جهت متن (RTL/LTR)
+    const match = payload.match(/BALEENC1:([A-Za-z0-9+/=]+)/);
+    if (!match || !match[1]) {
+      throw new Error("Invalid payload format");
+    }
+
+    const base64Data = match[1];
     const combined = this.base64ToBuffer(base64Data);
 
-    // حداقل طول: 12 بایت IV + حداقل 0 بایت دیتا + 16 بایت تگ = 28 بایت
+    // حداقل طول: 12 بایت IV + 16 بایت تگ = 28 بایت
     if (combined.byteLength < 28) {
       throw new Error("Payload too short");
     }

@@ -1,138 +1,63 @@
-import { StorageManager } from '../../shared/storage.js';
-
 export class LockButtonUI {
-  static HEADER_BUTTON_ID = "bale-enc-header-lock-btn";
-  static COMPOSER_BUTTON_ID = "bale-enc-composer-lock-btn";
-  static FLOATING_BUTTON_ID = "bale-enc-floating-lock-btn";
+  static SETTINGS_BUTTON_ID = "bale-enc-chat-settings-btn";
 
   /**
-   * رندر نماد قفل در هدر و نوار چت (کامپوزر)
+   * رندر تنها یک دکمه تمیز «تنظیم رمزنگاری» در نوار ارسال پیام (کامپوزر چت)
    */
-  static render(headerEl, composerEl, currentChatId, chatConfig, onToggleCallback) {
-    // اگر هیچ چتی فعال نیست، تمام دکمهها را پاک کن
-    if (!currentChatId) {
-      this.removeAllButtons();
+  static render(composerEl, currentChatId, chatConfig) {
+    // در صورت عدم شناسایی چت یا عدم حضور کامپوزر، دکمه را حذف کن
+    if (!currentChatId || !composerEl) {
+      const existing = document.getElementById(this.SETTINGS_BUTTON_ID);
+      if (existing) existing.remove();
       return;
     }
 
-    let renderedAny = false;
-
-    // ۱. رندر در نوار ارسال پیام / کامپوزر چت
-    if (composerEl) {
-      let composerBtn = document.getElementById(this.COMPOSER_BUTTON_ID);
-      if (!composerBtn) {
-        composerBtn = document.createElement("button");
-        composerBtn.id = this.COMPOSER_BUTTON_ID;
-        composerBtn.type = "button";
-        // تلاش برای قرار دادن قبل از دکمه ارسال یا به عنوان اولین/آخرین فرزند کامپوزر
-        composerEl.insertBefore(composerBtn, composerEl.firstChild);
-      }
-      this.updateButtonState(composerBtn, currentChatId, chatConfig, onToggleCallback);
-      renderedAny = true;
-    } else {
-      const existing = document.getElementById(this.COMPOSER_BUTTON_ID);
-      if (existing) existing.remove();
+    let btn = document.getElementById(this.SETTINGS_BUTTON_ID);
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = this.SETTINGS_BUTTON_ID;
+      btn.type = "button";
+      // قرار دادن دکمه در ابتدای نوار چت تا مزاحم تایپ یا دکمه ارسال نشود
+      composerEl.insertBefore(btn, composerEl.firstChild);
     }
 
-    // ۲. رندر در هدر چت
-    if (headerEl) {
-      let headerBtn = document.getElementById(this.HEADER_BUTTON_ID);
-      if (!headerBtn) {
-        headerBtn = document.createElement("button");
-        headerBtn.id = this.HEADER_BUTTON_ID;
-        headerBtn.type = "button";
-        headerEl.appendChild(headerBtn);
-      }
-      this.updateButtonState(headerBtn, currentChatId, chatConfig, onToggleCallback);
-      renderedAny = true;
-    } else {
-      const existing = document.getElementById(this.HEADER_BUTTON_ID);
-      if (existing) existing.remove();
-    }
-
-    // ۳. در صورتی که ساختار DOM المان هدر یا کامپوزر را نداد، دکمه شناور در صفحه قرار میدهیم
-    let floatingBtn = document.getElementById(this.FLOATING_BUTTON_ID);
-    if (!renderedAny) {
-      if (!floatingBtn) {
-        floatingBtn = document.createElement("button");
-        floatingBtn.id = this.FLOATING_BUTTON_ID;
-        floatingBtn.type = "button";
-        document.body.appendChild(floatingBtn);
-      }
-      this.updateButtonState(floatingBtn, currentChatId, chatConfig, onToggleCallback);
-    } else if (floatingBtn) {
-      floatingBtn.remove();
-    }
+    this.updateButtonState(btn, currentChatId, chatConfig);
   }
 
-  static updateButtonState(btn, currentChatId, chatConfig, onToggleCallback) {
+  static updateButtonState(btn, currentChatId, chatConfig) {
     if (!btn) return;
 
-    // حالت ۱: چت پیکربندی شده و رمزنگاری فعال است
     if (chatConfig && chatConfig.enabled) {
-      btn.className = "bale-enc-lock-btn active";
-      btn.innerHTML = `<span>🔒 رمزنگاری فعال</span> <small>(${chatConfig.fingerprint || ""})</small>`;
-      btn.title = "رمزنگاری فعال است. کلیک کنید تا موقتاً غیرفعال شود.";
-      btn.onclick = async (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const newState = await StorageManager.toggleChatEnabled(chatConfig.messenger, chatConfig.uid);
-        chatConfig.enabled = newState;
-        this.syncAllButtons(currentChatId, chatConfig, onToggleCallback);
-        if (onToggleCallback) onToggleCallback(newState);
-      };
-      return;
+      btn.className = "active";
+      btn.innerHTML = `<span>🔒 تنظیم رمزنگاری</span> <small>(${chatConfig.fingerprint || ""})</small>`;
+      btn.title = "رمزنگاری فعال است. کلیک کنید تا تنظیمات این چت در افزونه باز شود.";
+    } else if (chatConfig && !chatConfig.enabled) {
+      btn.className = "inactive";
+      btn.innerHTML = `<span>🔓 تنظیم رمزنگاری</span>`;
+      btn.title = "رمزنگاری موقتاً خاموش است. کلیک کنید تا در افزونه فعال شود.";
+    } else {
+      btn.className = "unconfigured";
+      btn.innerHTML = `<span>🔒 تنظیم رمزنگاری</span> <small>(ID: ${currentChatId})</small>`;
+      btn.title = `شناسه این چت: ${currentChatId} — کلیک کنید تا صفحه افزونه باز شده و تنظیم شود.`;
     }
 
-    // حالت ۲: چت پیکربندی شده ولی رمزنگاری موقتاً خاموش است
-    if (chatConfig && !chatConfig.enabled) {
-      btn.className = "bale-enc-lock-btn inactive";
-      btn.innerHTML = `<span>🔓 رمزنگاری غیرفعال</span>`;
-      btn.title = "رمزنگاری موقتاً غیرفعال است. کلیک کنید تا مجدداً فعال شود.";
-      btn.onclick = async (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const newState = await StorageManager.toggleChatEnabled(chatConfig.messenger, chatConfig.uid);
-        chatConfig.enabled = newState;
-        this.syncAllButtons(currentChatId, chatConfig, onToggleCallback);
-        if (onToggleCallback) onToggleCallback(newState);
-      };
-      return;
-    }
-
-    // حالت ۳: چت در لیست افزونه ثبت نشده است
-    btn.className = "bale-enc-lock-btn unconfigured";
-    btn.innerHTML = `<span>🔒 تنظیم رمزنگاری</span> <small>(ID: ${currentChatId})</small>`;
-    btn.title = `شناسه این چت: ${currentChatId} — کلیک برای کپی شناسه و راهنمای ثبت`;
+    // با کلیک روی دکمه، صفحه اکستنشن باز شده و اطلاعات چت لود می‌شود
     btn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
       try {
-        navigator.clipboard.writeText(String(currentChatId));
-        alert(
-          `شناسه چت (${currentChatId}) در کلیپبورد کپی شد.\n\nاکنون روی آیکون افزونه در بالای مرورگر کلیک کرده و در تب «افزودن چت»، پسورد یا کلید مشترک را ثبت نمایید.`
-        );
-      } catch {
-        alert(
-          `شناسه چت جاری: ${currentChatId}\nلطفاً این شناسه را در افزونه ثبت کنید.`
-        );
+        chrome.runtime.sendMessage({
+          action: "open_popup",
+          uid: currentChatId
+        });
+      } catch (err) {
+        console.error("[Bale E2EE] Error opening popup:", err);
       }
     };
   }
 
-  static syncAllButtons(currentChatId, chatConfig, onToggleCallback) {
-    [this.HEADER_BUTTON_ID, this.COMPOSER_BUTTON_ID, this.FLOATING_BUTTON_ID].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        this.updateButtonState(el, currentChatId, chatConfig, onToggleCallback);
-      }
-    });
-  }
-
   static removeAllButtons() {
-    [this.HEADER_BUTTON_ID, this.COMPOSER_BUTTON_ID, this.FLOATING_BUTTON_ID].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.remove();
-    });
+    const el = document.getElementById(this.SETTINGS_BUTTON_ID);
+    if (el) el.remove();
   }
 }

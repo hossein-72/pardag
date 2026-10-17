@@ -1,4 +1,5 @@
 import { MessengerAdapter } from './adapter-base.js';
+import { CONSTANTS } from '../../shared/constants.js';
 
 export class BaleAdapter extends MessengerAdapter {
   getName() {
@@ -7,10 +8,6 @@ export class BaleAdapter extends MessengerAdapter {
 
   /**
    * استخراج شناسه چت از URL یا پارامترهای مختلف بله
-   * پشتیبانی از:
-   * https://web.bale.ai/chat?uid=4312346492
-   * https://web.bale.ai/#/chat?uid=4312346492
-   * https://web.bale.ai/chat/4312346492
    */
   getActiveChatId() {
     try {
@@ -41,7 +38,7 @@ export class BaleAdapter extends MessengerAdapter {
         return pathMatch[1];
       }
 
-      // ۵. پشتیبانی از ویژگیهای DOM در صورت عدم وجود در URL
+      // ۵. ویژگی‌های DOM در صورت موجود بودن
       const domPeer = document.querySelector('[data-peer-id], [data-chat-id]');
       if (domPeer) {
         return domPeer.getAttribute('data-peer-id') || domPeer.getAttribute('data-chat-id');
@@ -54,11 +51,11 @@ export class BaleAdapter extends MessengerAdapter {
   }
 
   /**
-   * پیدا کردن هدر چت برای تزریق دکمه قفل
+   * پیدا کردن هدر چت
    */
   getHeaderElement() {
     return document.querySelector(
-      'header, [class*="ChatHeader" i], [class*="chat-header" i], [class*="TopBar" i], [class*="top-bar" i], [class*="topbar" i], [class*="middle-header" i], [class*="chat-info" i], [class*="ChatInfo" i], [data-testid*="header" i], .chat-top, div[class*="header" i], [class*="conversation-header" i]'
+      'header, [class*="ChatHeader" i], [class*="chat-header" i], [class*="TopBar" i], [class*="top-bar" i], [class*="topbar" i], [class*="middle-header" i], [class*="chat-info" i], [data-testid*="header" i], .chat-top, div[class*="header" i]'
     );
   }
 
@@ -89,63 +86,142 @@ export class BaleAdapter extends MessengerAdapter {
   }
 
   /**
-   * پیدا کردن دکمه ارسال
+   * پیدا کردن دکمه ارسال پیام در کامپوزر
    */
   getSendButtonElement() {
-    return document.querySelector(
-      'button[aria-label*="Send" i], button[aria-label*="ارسال" i], button[class*="send" i], [data-testid*="send" i], button[type="submit"], [class*="send-btn" i], [class*="send-button" i]'
+    // ۱. جستجوی صریح با سلکتورهای ارسال
+    const candidates = document.querySelectorAll(
+      'button[aria-label*="Send" i], button[aria-label*="ارسال" i], button[class*="send" i], [data-testid*="send" i], button[type="submit"], [class*="send-btn" i], [class*="send-button" i], [class*="btn-send" i]'
     );
+    for (const btn of candidates) {
+      if (btn.offsetParent !== null && !btn.id?.includes("bale-enc")) return btn;
+    }
+
+    // ۲. بررسی دکمه‌های داخل کامپوزر جاری
+    const inputEl = this.getInputElement();
+    const composer = this.getComposerElement() || (inputEl ? inputEl.closest('[class*="composer" i], form, footer, div') : null);
+    if (composer) {
+      const buttons = composer.querySelectorAll('button, [role="button"]');
+      for (const btn of buttons) {
+        if (btn.id && btn.id.includes("bale-enc")) continue;
+        if (btn.offsetParent === null) continue;
+
+        const html = btn.outerHTML.toLowerCase();
+        if (html.includes("emoji") || html.includes("attach") || html.includes("پیوست") || html.includes("voice") || html.includes("میکروفون")) {
+          continue;
+        }
+
+        if (html.includes("send") || html.includes("ارسال") || html.includes("submit") || html.includes("plane") || btn.type === "submit") {
+          return btn;
+        }
+      }
+
+      // در صورت نبود برچسب، آخرین دکمه قابل مشاهده در کامپوزر که دکمه ایموجی یا اتچ نیست، دکمه ارسال است
+      const validButtons = Array.from(buttons).filter(b => 
+        b.offsetParent !== null && 
+        (!b.id || !b.id.includes("bale-enc")) &&
+        !b.matches('[aria-label*="emoji" i], [aria-label*="attach" i], [aria-label*="پیوست" i]')
+      );
+      if (validButtons.length > 0) {
+        return validButtons[validButtons.length - 1];
+      }
+    }
+
+    return null;
   }
 
   /**
-   * پیدا کردن عناصر متنی پیامها در صفحه
+   * بررسی اینکه آیا المان کلیک‌شده دکمه ارسال پیام است یا خیر
+   */
+  isSendButton(target) {
+    if (!target) return false;
+    const btn = target.closest('button, [role="button"]');
+    if (!btn) return false;
+    if (btn.id && btn.id.includes("bale-enc")) return false;
+
+    const composer = this.getComposerElement();
+    if (composer && !composer.contains(btn)) return false;
+
+    const html = btn.outerHTML.toLowerCase();
+    if (html.includes("emoji") || html.includes("attach") || html.includes("پیوست")) {
+      return false;
+    }
+
+    if (html.includes("send") || html.includes("ارسال") || html.includes("submit") || html.includes("plane") || btn.type === "submit") {
+      return true;
+    }
+
+    // اگر دکمه فعال دیگری در کامپوزر است
+    const sendBtn = this.getSendButtonElement();
+    return sendBtn === btn || sendBtn?.contains(target);
+  }
+
+  /**
+   * پیدا کردن تمام عناصر متنی حاوی BALEENC1: به صورت مستقل از کلاس‌های مبهم
    */
   getMessageElements() {
     const elements = new Set();
-    const candidates = document.querySelectorAll(
-      '[class*="message-text" i], [class*="text-content" i], [class*="message-body" i], [dir="auto"]'
-    );
-    
-    candidates.forEach(el => {
-      // اطمینان از اینکه خود فیلد ورودی پیام یا المانهای کمکی انتخاب نشوند
-      if (!el.isContentEditable && !el.closest('[contenteditable="true"]') && !el.closest('header') && !el.closest('.bale-enc-lock-btn')) {
-        elements.add(el);
+
+    // استفاده از TreeWalker بومی برای پیدا کردن هر نود متنی حاوی پیشوند رمزنگاری
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          if (node.nodeValue && node.nodeValue.includes(CONSTANTS.PREFIX)) {
+            const p = node.parentElement;
+            if (!p) return NodeFilter.FILTER_REJECT;
+            if (p.isContentEditable || p.closest('[contenteditable="true"]')) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            if (p.tagName === "SCRIPT" || p.tagName === "STYLE" || p.tagName === "TEXTAREA" || p.tagName === "INPUT") {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          }
+          return NodeFilter.FILTER_SKIP;
+        }
       }
-    });
+    );
+
+    let textNode;
+    while ((textNode = walker.nextNode())) {
+      if (textNode.parentElement) {
+        elements.add(textNode.parentElement);
+      }
+    }
 
     return Array.from(elements);
   }
 
   /**
-   * خواندن متن ورودی با حفظ خطوط جدید (Newlines)
+   * خواندن متن ورودی با حفظ خطوط جدید
    */
   getInputValue(inputEl) {
     if (!inputEl) return "";
     if (inputEl.tagName === "TEXTAREA" || inputEl.tagName === "INPUT") {
       return inputEl.value;
     }
-    // برای عناصر contenteditable، innerText خطوط جدید را حفظ میکند
     return inputEl.innerText ? inputEl.innerText.replace(/\u00A0/g, " ").trim() : "";
   }
 
   /**
-   * جایگزینی متن در فیلد ورودی بهگونهای که State داخلی React/SPA بله متوجه تغییر شود
+   * جایگزینی متن در فیلد ورودی به شکلی که React متوجه تغییرات شود
    */
   setInputValue(inputEl, text) {
     if (!inputEl) return;
     inputEl.focus();
 
     if (inputEl.tagName === "TEXTAREA" || inputEl.tagName === "INPUT") {
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value"
-      )?.set;
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(inputEl, text);
+      const proto = inputEl.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (setter) {
+        setter.call(inputEl, text);
       } else {
         inputEl.value = text;
       }
       inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
       return;
     }
 
@@ -156,10 +232,19 @@ export class BaleAdapter extends MessengerAdapter {
     selection.removeAllRanges();
     selection.addRange(range);
 
-    // execCommand سازگارترین روش برای تحریک رویدادهای داخلی React در contenteditable است
-    const success = document.execCommand("insertText", false, text);
-    if (!success) {
+    let success = false;
+    try {
+      success = document.execCommand("insertText", false, text);
+    } catch {}
+
+    if (!success || inputEl.textContent !== text) {
       inputEl.textContent = text;
+      inputEl.dispatchEvent(new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertText",
+        data: text
+      }));
       inputEl.dispatchEvent(new InputEvent("input", {
         bubbles: true,
         cancelable: true,

@@ -21,9 +21,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
-  // ۲. استخراج خودکار و دستی UID از تب فعال
-  let detectedUid = null;
-
+  // ۲. استخراج و اعمال شناسه چت
   async function detectActiveTabUid() {
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -32,7 +30,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       const href = activeTab.url;
       if (!href.includes("bale.ai")) return null;
 
-      // کوئری، هش یا تطبیق عبارات باقاعده
       const queryMatch = href.match(/[?&#](?:uid|id|peer_id)=([0-9a-zA-Z_-]+)/i);
       if (queryMatch && queryMatch[1]) {
         return queryMatch[1];
@@ -50,29 +47,62 @@ document.addEventListener("DOMContentLoaded", async () => {
     return null;
   }
 
-  async function checkAndApplyDetectedUid() {
-    detectedUid = await detectActiveTabUid();
-    const banner = document.getElementById("detected-uid-banner");
-    const uidInput = document.getElementById("uid");
+  async function checkAndApplyChatContext() {
+    // الف. اولویت اول: مقدار ارسالی از دکمه تنظیم رمزنگاری (URL param یا pendingOpenUid)
+    const urlParams = new URLSearchParams(window.location.search);
+    let targetUid = urlParams.get("uid");
 
-    if (detectedUid) {
-      if (!uidInput.value) {
-        uidInput.value = detectedUid;
+    if (!targetUid) {
+      const storageData = await chrome.storage.local.get("pendingOpenUid");
+      if (storageData.pendingOpenUid) {
+        targetUid = storageData.pendingOpenUid;
+        await chrome.storage.local.remove("pendingOpenUid");
       }
+    }
+
+    // ب. اولویت دوم: استخراج زنده از تب فعال
+    if (!targetUid) {
+      targetUid = await detectActiveTabUid();
+    }
+
+    if (!targetUid) return;
+
+    // بررسی اینکه آیا این چت از قبل ذخیره شده یا خیر
+    const chats = await StorageManager.getEncryptedChats();
+    const existingKey = `bale_${targetUid}`;
+    const existingChat = chats[existingKey];
+
+    if (existingChat) {
+      // بارگذاری اطلاعات چت ذخیره‌شده جهت ویرایش یا بررسی وضعیت
+      isEditingUid = targetUid;
+      document.getElementById("messenger").value = existingChat.messenger || "bale";
+      document.getElementById("uid").value = existingChat.uid;
+      document.getElementById("uid").readOnly = true;
+      document.getElementById("displayName").value = existingChat.displayName || "";
+      document.getElementById("password").value = existingChat.password || "";
+
+      submitBtn.textContent = "بروزرسانی تغییرات چت";
+      cancelEditBtn.style.display = "block";
+
+      const banner = document.getElementById("detected-uid-banner");
       if (banner) {
         banner.style.display = "flex";
-        banner.querySelector("span").textContent = `شناسه چت جاری (${detectedUid}) در تب فعال شناسایی شد.`;
+        banner.querySelector("span").textContent = `اطلاعات چت «${existingChat.displayName}» (شناسه: ${targetUid}) لود شد.`;
+        document.getElementById("btn-use-detected").style.display = "none";
       }
-    } else if (banner) {
-      banner.style.display = "none";
+      switchTab("tab-add-chat");
+    } else {
+      // چت جدید است: پر کردن فیلد UID
+      document.getElementById("uid").value = targetUid;
+      const banner = document.getElementById("detected-uid-banner");
+      if (banner) {
+        banner.style.display = "flex";
+        banner.querySelector("span").textContent = `شناسه چت (${targetUid}) در تب فعال شناسایی شد.`;
+        document.getElementById("btn-use-detected").style.display = "none";
+      }
+      document.getElementById("displayName").focus();
     }
   }
-
-  document.getElementById("btn-use-detected")?.addEventListener("click", () => {
-    if (detectedUid) {
-      document.getElementById("uid").value = detectedUid;
-    }
-  });
 
   document.getElementById("btn-detect-uid")?.addEventListener("click", async () => {
     const uid = await detectActiveTabUid();
@@ -240,7 +270,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // ۶. تب ۳: تولید کلید و اثر انگشت (Fingerprint)
+  // ۶. تب ۳: تولید کلید و اثر انگشت
   const genKeyBtn = document.getElementById("btn-gen-key");
   const genKeyInput = document.getElementById("generated-key");
   const fpCode = document.getElementById("key-fingerprint");
@@ -293,7 +323,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return p.innerHTML;
   }
 
-  // راه‌اندازی اولیه
-  await checkAndApplyDetectedUid();
+  // راه‌اندازی فوری
+  await checkAndApplyChatContext();
   await renderChatsList();
 });
