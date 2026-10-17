@@ -35,15 +35,18 @@ class ContentController {
       this.currentChatConfig = null;
     }
 
-    // رندر تنها یک دکمه تنظیم رمزنگاری در نوار چت (کامپوزر)
     const composerEl = this.adapter.getComposerElement();
-    LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig);
+    LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig, (newState) => {
+      if (this.currentChatConfig) {
+        this.currentChatConfig.enabled = newState;
+      }
+    });
 
     this.scanAllMessages();
   }
 
   /**
-   * تشخیص تغییر چت در ساختار SPA (با تغییر URL، هش یا تغییر کامپوننت)
+   * تشخیص تغییر چت در ساختار SPA
    */
   setupNavigationObservers() {
     const checkUrlChange = () => {
@@ -57,16 +60,18 @@ class ContentController {
     window.addEventListener("popstate", checkUrlChange);
     window.addEventListener("hashchange", checkUrlChange);
 
-    // بررسی دورهای برای حفظ دکمه تنظیم در صورت Re-render کامپوزر
     setInterval(() => {
       checkUrlChange();
 
-      const hasBtn = document.getElementById(LockButtonUI.SETTINGS_BUTTON_ID);
-      if (this.currentChatId && !hasBtn) {
+      // اطمینان از حضور نشانگر وضعیت در گوشه صفحه چت
+      const hasCornerBadge = document.getElementById(LockButtonUI.FLOATING_BUTTON_ID);
+      if (this.currentChatId && !hasCornerBadge) {
         const composerEl = this.adapter.getComposerElement();
-        if (composerEl) {
-          LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig);
-        }
+        LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig, (newState) => {
+          if (this.currentChatConfig) {
+            this.currentChatConfig.enabled = newState;
+          }
+        });
       }
     }, 600);
   }
@@ -120,41 +125,45 @@ class ContentController {
 
           e.preventDefault();
           e.stopImmediatePropagation();
-          await this.encryptAndTriggerSend(inputEl, rawText, null);
+          await this.handleSendTrigger(inputEl, rawText, null);
         }
       }
     }, true); // Capture phase
 
-    // ۲. رهگیری کلیک موس روی دکمه ارسال پیام
-    document.addEventListener("click", async (e) => {
-      if (this.isEncryptingAndSending) return;
+    // ۲. رهگیری رویدادهای موس (pointerdown, mousedown, click) روی دکمه ارسال پیام
+    const mouseEvents = ['pointerdown', 'mousedown', 'click'];
+    mouseEvents.forEach(evtName => {
+      document.addEventListener(evtName, async (e) => {
+        if (this.isEncryptingAndSending) return;
 
-      // بررسی اینکه آیا المان کلیک‌شده دکمه ارسال است یا خیر
-      const isSendBtn = this.adapter.isSendButton(e.target);
-      if (isSendBtn) {
-        const inputEl = this.adapter.getInputElement();
-        if (!inputEl) return;
+        if (this.adapter.isSendButton(e.target)) {
+          const inputEl = this.adapter.getInputElement();
+          if (!inputEl) return;
 
-        if (this.shouldIntercept()) {
-          const rawText = this.adapter.getInputValue(inputEl);
-          if (!rawText) return;
+          if (this.shouldIntercept()) {
+            const rawText = this.adapter.getInputValue(inputEl);
+            if (!rawText) return;
 
-          e.preventDefault();
-          e.stopImmediatePropagation();
+            e.preventDefault();
+            e.stopImmediatePropagation();
 
-          const clickedBtn = e.target.closest('button, [role="button"]');
-          await this.encryptAndTriggerSend(inputEl, rawText, clickedBtn);
+            // شروع رمزنگاری فقط در اولین رویداد فشرده‌شدن موس (pointerdown یا mousedown)
+            if (evtName === 'pointerdown' || evtName === 'mousedown') {
+              await this.handleSendTrigger(inputEl, rawText, e.target);
+            }
+          }
         }
-      }
-    }, true); // Capture phase
+      }, true); // Capture phase
+    });
   }
 
   shouldIntercept() {
     return Boolean(this.currentChatConfig && this.currentChatConfig.enabled && this.currentChatConfig.password);
   }
 
-  async encryptAndTriggerSend(inputEl, rawText, sendBtn) {
-    // اگر متن تصادفاً قبلاً رمز شده بود
+  async handleSendTrigger(inputEl, rawText, clickedTarget) {
+    if (this.isEncryptingAndSending) return;
+
     if (rawText.startsWith(CONSTANTS.PREFIX)) {
       alert(CONSTANTS.MESSAGES.PREFIX_COLLISION_WARN);
       return;
@@ -162,41 +171,36 @@ class ContentController {
 
     try {
       this.isEncryptingAndSending = true;
+
+      // ۱. رمزنگاری متن پیام با کلید چت
       const ciphertext = await CryptoEngine.encrypt(rawText, this.currentChatConfig.password);
 
-      // ذخیره در کش نشست برای نمایش فوری در صفحه خود فرستنده
+      // ۲. ذخیره در کش نشست برای نمایش آنی متن اصلی در صفحه فرستنده
       MessageDecorator.cachePlaintext(ciphertext, rawText);
 
-      // جایگزینی متن ورودی با پیام رمزنگاری‌شده
+      // ۳. جایگزینی متن در فیلد ورودی به شکل سازگار با React
       this.adapter.setInputValue(inputEl, ciphertext);
 
-      // تأخیر ۵۰ میلی‌ثانیه‌ای برای ثبت شدن State در React بله
-      await new Promise(r => setTimeout(r, 50));
+      // ۴. مهلت کوتاه برای پذیرش State در React
+      await new Promise(r => setTimeout(r, 60));
 
-      const btn = sendBtn || this.adapter.getSendButtonElement();
+      // ۵. اجرای ارسال پیام با تحریک رویدادهای واقعی
+      const btn = (clickedTarget && clickedTarget.closest('button, [role="button"], div[class*="send" i]')) ||
+                  this.adapter.getSendButtonElement();
+
       if (btn) {
-        btn.click();
+        this.adapter.triggerClick(btn);
       } else {
-        inputEl.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          which: 13,
-          bubbles: true,
-          cancelable: true
-        }));
+        this.adapter.triggerEnter(inputEl);
       }
 
-      // اطمینان از پاکسازی فیلد ورودی تا متن رمزشده در جعبه پیام باقی نماند
+      // ۶. آزادسازی قفل رهگیری پس از ارسال
       setTimeout(() => {
-        const currentVal = this.adapter.getInputValue(inputEl);
-        if (currentVal === ciphertext) {
-          this.adapter.setInputValue(inputEl, "");
-        }
         this.isEncryptingAndSending = false;
-      }, 150);
+      }, 250);
+
     } catch (err) {
-      console.error("[Bale E2EE] Encryption or send failed:", err);
+      console.error("[Bale E2EE] Error in handleSendTrigger:", err);
       this.isEncryptingAndSending = false;
     }
   }
