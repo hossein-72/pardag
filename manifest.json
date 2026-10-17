@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Bale Chat E2EE (Application-Layer)",
+  "version": "1.0.0",
+  "description": "رمزنگاری سرتاسری (AES-256-GCM) برای چتهای منتخب در پیامرسان تحت وب بله",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://web.bale.ai/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "تنظیمات رمزنگاری بله"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.bale.ai/*"],
+      "js": ["src/content/loader.js"],
+      "css": ["src/content/ui/styles.css"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/*"],
+      "matches": ["https://web.bale.ai/*"]
+    }
+  ]
+}

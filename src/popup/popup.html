@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>رمزنگاری چت بله</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="app-header">
+      <div class="header-title">
+        <span class="logo-icon">🔒</span>
+        <h1>رمزنگاری سرتاسری بله</h1>
+      </div>
+      <p class="subtitle">رمزنگاری پیام‌های متنی در لایه کاربرد (E2EE)</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tab-add-chat">افزودن چت</button>
+      <button class="tab-btn" data-tab="tab-chats-list">لیست چت‌ها <span id="chats-count" class="badge">۰</span></button>
+      <button class="tab-btn" data-tab="tab-keys">تولید کلید و تست</button>
+    </div>
+
+    <!-- تب ۱: افزودن / ویرایش چت -->
+    <section id="tab-add-chat" class="tab-content active">
+      <div id="detected-uid-banner" class="info-banner" style="display: none;">
+        <span>شناسه چت جاری در تب فعال شناسایی شد.</span>
+        <button type="button" id="btn-use-detected" class="btn link-btn">استفاده</button>
+      </div>
+
+      <form id="chat-form">
+        <div class="form-group">
+          <label for="messenger">پیام‌رسان</label>
+          <select id="messenger" required>
+            <option value="bale">بله (web.bale.ai)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="uid">شناسه چت (UID در آدرس چت)</label>
+          <div class="input-with-action">
+            <input type="text" id="uid" placeholder="مثال: 4312346492" required pattern="[0-9a-zA-Z_-]+">
+            <button type="button" id="btn-detect-uid" class="btn small icon-btn" title="دریافت خودکار از تب فعال">🎯</button>
+          </div>
+          <small class="field-hint">شناسه عددی موجود در URL چت مانند ?uid=4312346492</small>
+        </div>
+
+        <div class="form-group">
+          <label for="displayName">نام مخاطب / عنوان چت</label>
+          <input type="text" id="displayName" placeholder="مثال: علی محمدی" required>
+        </div>
+
+        <div class="form-group">
+          <label for="password">کلید یا پسورد مشترک (حداقل ۸ کاراکتر)</label>
+          <div class="input-with-action">
+            <input type="password" id="password" placeholder="عبارت عبور مشترک طرفین" required minlength="8">
+            <button type="button" id="btn-toggle-pwd" class="btn small icon-btn" title="نمایش/مخفی‌سازی کلید">👁️</button>
+          </div>
+          <small class="field-hint">کلید باید دقیقاً بین شما و مخاطب یکسان باشد.</small>
+        </div>
+
+        <button type="submit" id="btn-submit-chat" class="btn primary full-width">ذخیره و فعال‌سازی رمزنگاری</button>
+        <button type="button" id="btn-cancel-edit" class="btn secondary full-width" style="display: none; margin-top: 6px;">انصراف از ویرایش</button>
+      </form>
+    </section>
+
+    <!-- تب ۲: لیست چت‌های رمزنگاری‌شده -->
+    <section id="tab-chats-list" class="tab-content">
+      <div class="list-header">
+        <h3>چت‌های محافظت‌شده</h3>
+        <input type="text" id="search-chats" class="search-input" placeholder="جستجو در چت‌ها...">
+      </div>
+      <div id="chats-list" class="chats-list"></div>
+    </section>
+
+    <!-- تب ۳: تولید کلید و تست رمزنگاری -->
+    <section id="tab-keys" class="tab-content">
+      <div class="warning-box">
+        ⚠️ <strong>هشدار امنیتی:</strong> کلید را فقط از طریق یک کانال امن و خارج از بله به طرف مقابل برسانید و هرگز آن را در خود پیام‌رسان نفرستید.
+      </div>
+
+      <div class="card">
+        <h4>تولید کلید تصادفی استاندارد</h4>
+        <p class="hint">کلید تصادفی ۲۵۶ بیتی امن (Base64) تولید کنید:</p>
+        <button id="btn-gen-key" class="btn secondary full-width">تولید کلید تصادفی ۲۵۶ بیتی</button>
+        
+        <div class="input-copy-group">
+          <input type="text" id="generated-key" readonly placeholder="کلید تولیدشده اینجا قرار می‌گیرد...">
+          <button id="btn-copy-key" class="btn small">کپی</button>
+        </div>
+
+        <div class="fingerprint-row">
+          <span>اثر انگشت کلید (Fingerprint):</span>
+          <code id="key-fingerprint">--------</code>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 12px;">
+        <h4>آزمایشگر رمزنگاری (Self-Test)</h4>
+        <p class="hint">ارزیابی اجرای کامل PBKDF2 (۶۰۰٬۰۰۰ چرخه) و AES-256-GCM:</p>
+        <button id="btn-test-crypto" class="btn secondary full-width">اجرای تست رمزنگاری</button>
+        <pre id="test-result" class="test-output"></pre>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
