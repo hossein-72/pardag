@@ -7,13 +7,13 @@ export class LockButtonUI {
   /**
    * رندر نشانگر وضعیت در گوشه صفحه و دکمه تنظیم در نوار چت
    */
-  static render(composerEl, currentChatId, chatConfig, onToggleCallback) {
+  static render(composerEl, currentChatId, chatConfig, adapter, onToggleCallback) {
     if (!currentChatId) {
       this.removeAllButtons();
       return;
     }
 
-    // ۱. رندر نشانگر کوچک وضعیت در گوشه صفحه چت
+    // ۱. رندر نشانگر کوچک وضعیت در گوشه صفحه چت (پایین‌تر از نوار پین)
     let cornerBadge = document.getElementById(this.FLOATING_BUTTON_ID);
     if (!cornerBadge) {
       cornerBadge = document.createElement("button");
@@ -21,7 +21,7 @@ export class LockButtonUI {
       cornerBadge.type = "button";
       document.body.appendChild(cornerBadge);
     }
-    this.updateCornerBadge(cornerBadge, currentChatId, chatConfig, onToggleCallback);
+    this.updateCornerBadge(cornerBadge, currentChatId, chatConfig, adapter, onToggleCallback);
 
     // ۲. رندر دکمه تنظیم در کامپوزر
     if (composerEl) {
@@ -32,11 +32,11 @@ export class LockButtonUI {
         settingsBtn.type = "button";
         composerEl.insertBefore(settingsBtn, composerEl.firstChild);
       }
-      this.updateSettingsBtn(settingsBtn, currentChatId, chatConfig);
+      this.updateSettingsBtn(settingsBtn, currentChatId, chatConfig, adapter);
     }
   }
 
-  static updateCornerBadge(btn, currentChatId, chatConfig, onToggleCallback) {
+  static updateCornerBadge(btn, currentChatId, chatConfig, adapter, onToggleCallback) {
     if (!btn) return;
 
     if (chatConfig && chatConfig.enabled) {
@@ -49,7 +49,7 @@ export class LockButtonUI {
         const newState = await StorageManager.toggleChatEnabled(chatConfig.messenger, chatConfig.uid);
         chatConfig.enabled = newState;
         if (onToggleCallback) onToggleCallback(newState);
-        this.updateCornerBadge(btn, currentChatId, chatConfig, onToggleCallback);
+        this.updateCornerBadge(btn, currentChatId, chatConfig, adapter, onToggleCallback);
       };
     } else if (chatConfig && !chatConfig.enabled) {
       btn.className = "bale-enc-lock-btn inactive";
@@ -61,7 +61,7 @@ export class LockButtonUI {
         const newState = await StorageManager.toggleChatEnabled(chatConfig.messenger, chatConfig.uid);
         chatConfig.enabled = newState;
         if (onToggleCallback) onToggleCallback(newState);
-        this.updateCornerBadge(btn, currentChatId, chatConfig, onToggleCallback);
+        this.updateCornerBadge(btn, currentChatId, chatConfig, adapter, onToggleCallback);
       };
     } else {
       btn.className = "bale-enc-lock-btn unconfigured";
@@ -70,15 +70,17 @@ export class LockButtonUI {
       btn.onclick = (e) => {
         e.stopPropagation();
         e.preventDefault();
+        const displayName = adapter ? adapter.getActiveChatDisplayName() : null;
         chrome.runtime.sendMessage({
           action: "open_popup",
-          uid: currentChatId
+          uid: currentChatId,
+          displayName: displayName
         });
       };
     }
   }
 
-  static updateSettingsBtn(btn, currentChatId, chatConfig) {
+  static updateSettingsBtn(btn, currentChatId, chatConfig, adapter) {
     if (!btn) return;
 
     if (chatConfig && chatConfig.enabled) {
@@ -95,9 +97,11 @@ export class LockButtonUI {
     btn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
+      const displayName = adapter ? adapter.getActiveChatDisplayName() : null;
       chrome.runtime.sendMessage({
         action: "open_popup",
-        uid: currentChatId
+        uid: currentChatId,
+        displayName: displayName
       });
     };
   }

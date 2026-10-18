@@ -21,48 +21,59 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
-  // ۲. استخراج و اعمال شناسه چت
-  async function detectActiveTabUid() {
+  // ۲. استخراج و اعمال شناسه چت و نام کاربر
+  async function detectActiveTabInfo() {
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!activeTab || !activeTab.url) return null;
+      if (!activeTab || !activeTab.url) return { uid: null, displayName: null };
+
+      // پیام مستقیم به Content Script برای دریافت دقیق اطلاعات از DOM بله
+      if (activeTab.id) {
+        try {
+          const response = await chrome.tabs.sendMessage(activeTab.id, { action: "get_chat_info" });
+          if (response && (response.uid || response.displayName)) {
+            return response;
+          }
+        } catch {}
+      }
 
       const href = activeTab.url;
-      if (!href.includes("bale.ai")) return null;
+      if (!href.includes("bale.ai")) return { uid: null, displayName: null };
 
       const queryMatch = href.match(/[?&#](?:uid|id|peer_id)=([0-9a-zA-Z_-]+)/i);
-      if (queryMatch && queryMatch[1]) {
-        return queryMatch[1];
+      let detectedUid = queryMatch ? queryMatch[1] : null;
+
+      if (!detectedUid) {
+        const url = new URL(href);
+        detectedUid = url.searchParams.get("uid") || url.searchParams.get("id");
       }
 
-      const url = new URL(href);
-      const fromSearch = url.searchParams.get("uid") || url.searchParams.get("id");
-      if (fromSearch) return fromSearch;
-
-      const pathMatch = url.pathname.match(/\/chat\/([0-9a-zA-Z_-]+)/i);
-      if (pathMatch && pathMatch[1] && pathMatch[1] !== "chat") {
-        return pathMatch[1];
-      }
-    } catch {}
-    return null;
+      return { uid: detectedUid, displayName: null };
+    } catch {
+      return { uid: null, displayName: null };
+    }
   }
 
   async function checkAndApplyChatContext() {
-    // الف. اولویت اول: مقدار ارسالی از دکمه تنظیم رمزنگاری (URL param یا pendingOpenUid)
+    // الف. اولویت اول: پارامترهای ارسالی در URL یا pendingOpen
     const urlParams = new URLSearchParams(window.location.search);
     let targetUid = urlParams.get("uid");
+    let targetDisplayName = urlParams.get("displayName");
 
     if (!targetUid) {
-      const storageData = await chrome.storage.local.get("pendingOpenUid");
+      const storageData = await chrome.storage.local.get(["pendingOpenUid", "pendingOpenDisplayName"]);
       if (storageData.pendingOpenUid) {
         targetUid = storageData.pendingOpenUid;
-        await chrome.storage.local.remove("pendingOpenUid");
+        if (!targetDisplayName) targetDisplayName = storageData.pendingOpenDisplayName;
+        await chrome.storage.local.remove(["pendingOpenUid", "pendingOpenDisplayName"]);
       }
     }
 
-    // ب. اولویت دوم: استخراج زنده از تب فعال
-    if (!targetUid) {
-      targetUid = await detectActiveTabUid();
+    // ب. اولویت دوم: استخراج زنده از صفحه چت
+    if (!targetUid || !targetDisplayName) {
+      const liveInfo = await detectActiveTabInfo();
+      if (!targetUid && liveInfo.uid) targetUid = liveInfo.uid;
+      if (!targetDisplayName && liveInfo.displayName) targetDisplayName = liveInfo.displayName;
     }
 
     if (!targetUid) return;
@@ -73,12 +84,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const existingChat = chats[existingKey];
 
     if (existingChat) {
-      // بارگذاری اطلاعات چت ذخیره‌شده جهت ویرایش یا بررسی وضعیت
+      // چت قبلاً ذخیره شده: بارگذاری اطلاعات کامل
       isEditingUid = targetUid;
       document.getElementById("messenger").value = existingChat.messenger || "bale";
       document.getElementById("uid").value = existingChat.uid;
       document.getElementById("uid").readOnly = true;
-      document.getElementById("displayName").value = existingChat.displayName || "";
+      document.getElementById("displayName").value = existingChat.displayName || targetDisplayName || "";
       document.getElementById("password").value = existingChat.password || "";
 
       submitBtn.textContent = "بروزرسانی تغییرات چت";
@@ -87,28 +98,42 @@ document.addEventListener("DOMContentLoaded", async () => {
       const banner = document.getElementById("detected-uid-banner");
       if (banner) {
         banner.style.display = "flex";
-        banner.querySelector("span").textContent = `اطلاعات چت «${existingChat.displayName}» (شناسه: ${targetUid}) لود شد.`;
+        banner.querySelector("span").textContent = `اطلاعات چت «${existingChat.displayName}» لود شد.`;
         document.getElementById("btn-use-detected").style.display = "none";
       }
       switchTab("tab-add-chat");
     } else {
-      // چت جدید است: پر کردن فیلد UID
+      // چت جدید: پر کردن خودکار شناسه و نام مخاطب
       document.getElementById("uid").value = targetUid;
+      if (targetDisplayName) {
+        document.getElementById("displayName").value = targetDisplayName;
+      }
+
       const banner = document.getElementById("detected-uid-banner");
       if (banner) {
         banner.style.display = "flex";
-        banner.querySelector("span").textContent = `شناسه چت (${targetUid}) در تب فعال شناسایی شد.`;
+        const label = targetDisplayName ? `چت «${targetDisplayName}» (شناسه: ${targetUid})` : `شناسه (${targetUid})`;
+        banner.querySelector("span").textContent = `${label} شناسایی شد.`;
         document.getElementById("btn-use-detected").style.display = "none";
       }
-      document.getElementById("displayName").focus();
+
+      // هدایت فوکوس به فیلد پسورد در صورتی که نام خوانده شده باشد
+      if (targetDisplayName) {
+        document.getElementById("password").focus();
+      } else {
+        document.getElementById("displayName").focus();
+      }
     }
   }
 
   document.getElementById("btn-detect-uid")?.addEventListener("click", async () => {
-    const uid = await detectActiveTabUid();
-    if (uid) {
-      document.getElementById("uid").value = uid;
-      alert(`شناسه چت (${uid}) دریافت و جایگذاری شد.`);
+    const info = await detectActiveTabInfo();
+    if (info.uid) {
+      document.getElementById("uid").value = info.uid;
+      if (info.displayName) {
+        document.getElementById("displayName").value = info.displayName;
+      }
+      alert(`اطلاعات چت دریافت شد.\nشناسه: ${info.uid}${info.displayName ? `\nنام: ${info.displayName}` : ''}`);
     } else {
       alert("شناسه چت در تب فعال شناسایی نشد. مطمئن شوید در صفحه گفتگوی بله هستید.");
     }

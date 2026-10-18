@@ -1,7 +1,7 @@
-/* نشانگر وضعیت رمزنگاری در گوشه صفحه چت */
+/* نشانگر وضعیت رمزنگاری در گوشه صفحه چت (قرارگیری پایین‌تر از نوار پیام‌های پین‌شده) */
 #bale-enc-floating-lock-btn, .bale-enc-lock-btn {
   position: fixed;
-  top: 65px;
+  top: 110px;
   left: 20px;
   display: inline-flex;
   align-items: center;

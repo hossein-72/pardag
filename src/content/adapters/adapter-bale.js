@@ -51,6 +51,56 @@ export class BaleAdapter extends MessengerAdapter {
   }
 
   /**
+   * خواندن نام نمایشی مخاطب/چت جاری از هدر یا صفحه گفتگو
+   */
+  getActiveChatDisplayName() {
+    try {
+      // ۱. استخراج از هدر گفتگو
+      const header = this.getHeaderElement();
+      if (header) {
+        const titleCandidates = header.querySelectorAll(
+          '[class*="title" i], [class*="name" i], [class*="user-name" i], [class*="peer-name" i], h1, h2, h3, [role="heading"], strong, b'
+        );
+
+        for (const el of titleCandidates) {
+          const text = el.textContent?.trim();
+          if (text && text.length >= 2 &&
+              !text.includes("آنلاین") &&
+              !text.includes("بازدید") &&
+              !text.includes("تایپ") &&
+              !text.includes("عضو") &&
+              !text.includes("رمزنگاری")) {
+            return text;
+          }
+        }
+      }
+
+      // ۲. استخراج از تایتل صفحه (مانند "علی محمدی - بله" یا "بله | علی محمدی")
+      if (document.title && document.title.includes("بله")) {
+        const parts = document.title.split(/[-|–]/).map(s => s.trim());
+        for (const p of parts) {
+          if (p && p !== "بله" && p !== "پیام‌رسان بله" && !p.toLowerCase().includes("bale")) {
+            return p;
+          }
+        }
+      }
+
+      // ۳. استخراج از آیتم فعال در لیست چت‌های کناری
+      const activeDialogTitle = document.querySelector(
+        '[class*="active" i] [class*="title" i], [class*="active" i] [class*="name" i], [aria-selected="true"] [class*="title" i]'
+      );
+      if (activeDialogTitle && activeDialogTitle.textContent) {
+        const text = activeDialogTitle.textContent.trim();
+        if (text && text.length >= 2) return text;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * پیدا کردن هدر چت
    */
   getHeaderElement() {
@@ -89,7 +139,6 @@ export class BaleAdapter extends MessengerAdapter {
    * پیدا کردن دکمه ارسال پیام در کامپوزر
    */
   getSendButtonElement() {
-    // ۱. جستجوی صریح با سلکتورهای ارسال
     const candidates = document.querySelectorAll(
       'button[aria-label*="Send" i], button[aria-label*="ارسال" i], button[class*="send" i], [data-testid*="send" i], button[type="submit"], [class*="send-btn" i], [class*="send-button" i], [class*="btn-send" i]'
     );
@@ -97,7 +146,6 @@ export class BaleAdapter extends MessengerAdapter {
       if (btn.offsetParent !== null && !btn.id?.includes("bale-enc")) return btn;
     }
 
-    // ۲. بررسی دکمه‌های داخل کامپوزر جاری
     const inputEl = this.getInputElement();
     const composer = this.getComposerElement() || (inputEl ? inputEl.closest('[class*="composer" i], form, footer, div') : null);
     if (composer) {
@@ -116,7 +164,6 @@ export class BaleAdapter extends MessengerAdapter {
         }
       }
 
-      // در صورت نبود برچسب، آخرین المان قابل کلیک در کامپوزر که ایموجی یا اتچ نیست
       const validElements = Array.from(clickableElements).filter(b => 
         b.offsetParent !== null && 
         (!b.id || !b.id.includes("bale-enc")) &&
@@ -156,7 +203,7 @@ export class BaleAdapter extends MessengerAdapter {
   }
 
   /**
-   * شبیه‌سازی کامل تمام رویدادهای موس بر روی یک دکمه جهت اجرای قطعی در فریمورک‌های مختلف
+   * شبیه‌سازی کامل تمام رویدادهای موس بر روی یک دکمه
    */
   triggerClick(element) {
     if (!element) return;
@@ -248,19 +295,14 @@ export class BaleAdapter extends MessengerAdapter {
     }
 
     // برای عناصر contenteditable در React:
-    // ۱. فوکوس روی المان
     inputEl.focus();
-
-    // ۲. انتخاب کل متن موجود با دستور بومی مرورگر
     document.execCommand('selectAll', false, null);
 
-    // ۳. درج متن جدید با execCommand (باعث ایجاد native beforeinput و input در مرورگر می‌شود)
     let success = false;
     try {
       success = document.execCommand("insertText", false, text);
     } catch {}
 
-    // ۴. اگر execCommand جواب نداد، از DataTransfer و InputEvent استفاده می‌کنیم
     if (!success || !inputEl.textContent.includes(text)) {
       const dt = new DataTransfer();
       dt.setData('text/plain', text);

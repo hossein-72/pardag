@@ -20,6 +20,7 @@ class ContentController {
     this.setupMessageObserver();
     this.setupSendInterceptors();
     this.setupStorageListener();
+    this.setupMessageListener();
   }
 
   /**
@@ -36,7 +37,7 @@ class ContentController {
     }
 
     const composerEl = this.adapter.getComposerElement();
-    LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig, (newState) => {
+    LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig, this.adapter, (newState) => {
       if (this.currentChatConfig) {
         this.currentChatConfig.enabled = newState;
       }
@@ -63,11 +64,11 @@ class ContentController {
     setInterval(() => {
       checkUrlChange();
 
-      // اطمینان از حضور نشانگر وضعیت در گوشه صفحه چت
+      // اطمینان از حضور نشانگر وضعیت در گوشه صفحه چت (زیر نوار پین)
       const hasCornerBadge = document.getElementById(LockButtonUI.FLOATING_BUTTON_ID);
       if (this.currentChatId && !hasCornerBadge) {
         const composerEl = this.adapter.getComposerElement();
-        LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig, (newState) => {
+        LockButtonUI.render(composerEl, this.currentChatId, this.currentChatConfig, this.adapter, (newState) => {
           if (this.currentChatConfig) {
             this.currentChatConfig.enabled = newState;
           }
@@ -209,6 +210,18 @@ class ContentController {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === "local" && changes[CONSTANTS.STORAGE_KEYS.ENCRYPTED_CHATS]) {
         this.syncChatState();
+      }
+    });
+  }
+
+  setupMessageListener() {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === "get_chat_info") {
+        sendResponse({
+          uid: this.currentChatId || this.adapter.getActiveChatId(),
+          displayName: this.adapter.getActiveChatDisplayName()
+        });
+        return true;
       }
     });
   }

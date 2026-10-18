@@ -8,9 +8,9 @@ export const CONSTANTS = {
     ENCRYPTED_CHATS: "encryptedChats"
   },
   MESSAGES: {
-    DECRYPTED_BADGE: "🔒 پیام رمزنگاریشده",
-    DECRYPT_FAILED: "🔒 پیام رمزنگاریشده (رمزگشایی ناموفق - کلید نامعتبر)",
-    UNCONFIGURED_CHAT_WARN: "🔒 پیام رمزنگاریشده (این چت در لیست رمزنگاری شما نیست)",
-    PREFIX_COLLISION_WARN: "متن شما با پیشوند رزرو شده BALEENC1: شروع میشود. جهت جلوگیری از اختلال، پیام ارسال نشد."
+    DECRYPTED_BADGE: "🔒 Encrypted message",
+    DECRYPT_FAILED: "🔒 Encrypted message (decryption failed - invalid key)",
+    UNCONFIGURED_CHAT_WARN: "🔒 Encrypted message (this chat is not in your encrypted list)",
+    PREFIX_COLLISION_WARN: "Your text starts with the reserved prefix BALEENC1:. The message was not sent to prevent conflicts."
   }
 };
