@@ -1,6 +1,7 @@
 export class MessengerAdapter {
   getName() { throw new Error("Not implemented"); }
   getActiveChatId() { throw new Error("Not implemented"); }
+  isNonChatView() { return false; }
   getActiveChatDisplayName() { throw new Error("Not implemented"); }
   getHeaderElement() { throw new Error("Not implemented"); }
   getComposerElement() { throw new Error("Not implemented"); }

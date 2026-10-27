@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Bale Chat E2EE (Application-Layer)",
-  "version": "1.0.0",
-  "description": "رمزنگاری سرتاسری (AES-256-GCM) برای چتهای منتخب در پیامرسان تحت وب بله",
+  "version": "1.4.0",
+  "description": "رمزنگاری سرتاسری (AES-256-GCM + RSA) برای چتهای منتخب در پیامرسان تحت وب بله",
   "permissions": [
     "storage"
   ],

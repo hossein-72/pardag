@@ -12,18 +12,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "open_popup") {
     const uid = request.uid ? String(request.uid).trim() : "";
     const displayName = request.displayName ? String(request.displayName).trim() : "";
+    const tab = request.tab ? String(request.tab).trim() : "";
 
     chrome.storage.local.set({
       pendingOpenUid: uid,
-      pendingOpenDisplayName: displayName
+      pendingOpenDisplayName: displayName,
+      pendingOpenTab: tab
     }, () => {
       // تلاش برای باز کردن پاپ‌آپ با action.openPopup
       if (chrome.action && typeof chrome.action.openPopup === "function") {
         chrome.action.openPopup().catch(() => {
-          openStandalonePopup(uid, displayName);
+          openStandalonePopup(uid, displayName, tab);
         });
       } else {
-        openStandalonePopup(uid, displayName);
+        openStandalonePopup(uid, displayName, tab);
       }
     });
 
@@ -32,10 +34,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-function openStandalonePopup(uid, displayName) {
+function openStandalonePopup(uid, displayName, tab) {
   const params = new URLSearchParams();
   if (uid) params.set("uid", uid);
   if (displayName) params.set("displayName", displayName);
+  if (tab) params.set("tab", tab);
 
   const queryStr = params.toString() ? `?${params.toString()}` : "";
   const popupUrl = chrome.runtime.getURL(`src/popup/popup.html${queryStr}`);

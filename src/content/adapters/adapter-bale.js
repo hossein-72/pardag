@@ -1,9 +1,83 @@
 import { MessengerAdapter } from './adapter-base.js';
 import { CONSTANTS } from '../../shared/constants.js';
 
+// مسیرهای داخلی بله که چت نیستند و نباید به‌عنوان UID چت تفسیر شوند.
+const NON_CHAT_ROUTES = new Set([
+  "search",
+  "new",
+  "settings",
+  "profile",
+  "archived",
+  "archive",
+  "calls",
+  "contacts",
+  "requests",
+  "saved",
+  "folders",
+  "invite",
+  "login",
+  "logout"
+]);
+
 export class BaleAdapter extends MessengerAdapter {
   getName() {
     return "bale";
+  }
+
+  /**
+   * UID چتی که صریحاً در query یا hash آمده است.
+   * در حالت جستجو، بله آدرس را به /chat/search?uid=... تغییر می‌دهد
+   * اگر همان لحظه یک چت هم باز باشد.
+   */
+  getUidFromUrlParams() {
+    try {
+      const url = new URL(window.location.href);
+      const fromSearch =
+        url.searchParams.get("uid") ||
+        url.searchParams.get("id") ||
+        url.searchParams.get("peer_id");
+      if (fromSearch) return fromSearch;
+
+      if (url.hash && url.hash.includes("?")) {
+        const hashQuery = url.hash.substring(url.hash.indexOf("?"));
+        const hashParams = new URLSearchParams(hashQuery);
+        return (
+          hashParams.get("uid") ||
+          hashParams.get("id") ||
+          hashParams.get("peer_id") ||
+          null
+        );
+      }
+    } catch {}
+
+    return null;
+  }
+
+  /**
+   * صفحه جستجو، تنظیمات و سایر مسیرهای داخلی، چت نیستند.
+   * اما اگر همان لحظه چت مشخصی باز باشد (uid در URL)، وضعیت آن چت نمایش داده می‌شود.
+   */
+  isNonChatView() {
+    try {
+      if (this.getUidFromUrlParams()) return false;
+
+      const url = new URL(window.location.href);
+      const segments = url.pathname
+        .split("/")
+        .filter(Boolean)
+        .map((segment) => segment.toLowerCase());
+
+      if (segments[0] === "search") return true;
+
+      // پشتیبانی از مسیرهایی مانند /chat/search و /fa/chat/search
+      const chatIndex = segments.indexOf("chat");
+      return (
+        chatIndex !== -1 &&
+        NON_CHAT_ROUTES.has(segments[chatIndex + 1] || "")
+      );
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -11,6 +85,8 @@ export class BaleAdapter extends MessengerAdapter {
    */
   getActiveChatId() {
     try {
+      if (this.isNonChatView()) return null;
+
       const href = window.location.href;
 
       // ۱. بررسی Regex روی کل URL
@@ -227,7 +303,8 @@ export class BaleAdapter extends MessengerAdapter {
   }
 
   /**
-   * پیدا کردن تمام عناصر متنی حاوی BALEENC1: به صورت مستقل از کلاس‌ها
+   * پیدا کردن تمام عناصر متنی حاوی پیشوندهای رمزنگاری (BALEENC1/BALEENC2/BALEENC-KEY)
+   * به صورت مستقل از کلاس‌ها
    */
   getMessageElements() {
     const elements = new Set();
@@ -237,7 +314,7 @@ export class BaleAdapter extends MessengerAdapter {
       NodeFilter.SHOW_TEXT,
       {
         acceptNode(node) {
-          if (node.nodeValue && node.nodeValue.includes(CONSTANTS.PREFIX)) {
+          if (node.nodeValue && CONSTANTS.hasReservedPrefix(node.nodeValue)) {
             const p = node.parentElement;
             if (!p) return NodeFilter.FILTER_REJECT;
             if (p.isContentEditable || p.closest('[contenteditable="true"]')) {

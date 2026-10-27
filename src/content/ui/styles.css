@@ -1,7 +1,7 @@
 /* نشانگر وضعیت رمزنگاری در گوشه صفحه چت (قرارگیری پایین‌تر از نوار پیام‌های پین‌شده) */
 #bale-enc-floating-lock-btn, .bale-enc-lock-btn {
   position: fixed;
-  top: 110px;
+  top: 118px;
   left: 20px;
   display: inline-flex;
   align-items: center;
@@ -118,4 +118,134 @@
   word-break: break-word;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.6;
+}
+
+/* وضعیت‌های تبادل خودکار کلید */
+#bale-enc-floating-lock-btn.pending,
+.bale-enc-lock-btn.pending {
+  background-color: rgba(59, 130, 246, 0.14);
+  color: #1d4ed8;
+  border-color: #3b82f6;
+}
+
+#bale-enc-floating-lock-btn.waiting,
+.bale-enc-lock-btn.waiting {
+  background-color: rgba(245, 158, 11, 0.16);
+  color: #92400e;
+  border-color: #f59e0b;
+}
+
+#bale-enc-floating-lock-btn.verified,
+.bale-enc-lock-btn.verified {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #047857;
+  border-color: #10b981;
+}
+
+#bale-enc-floating-lock-btn.key-change,
+.bale-enc-lock-btn.key-change {
+  background-color: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+  border-color: #ef4444;
+  animation: bale-enc-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes bale-enc-pulse {
+  0%, 100% { box-shadow: 0 3px 10px rgba(239, 68, 68, 0.16); }
+  50% { box-shadow: 0 3px 18px rgba(239, 68, 68, 0.38); }
+}
+
+#bale-enc-chat-settings-btn.pending {
+  border-color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+
+#bale-enc-chat-settings-btn.waiting {
+  border-color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.14);
+  color: #92400e;
+}
+
+#bale-enc-chat-settings-btn.key-change {
+  border-color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+/* پیام تبادل کلید */
+.bale-enc-key-exchange {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #475569;
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px dashed rgba(100, 116, 139, 0.4);
+  border-radius: 6px;
+  padding: 3px 9px;
+  direction: rtl;
+}
+
+/* اعلان‌های کوتاه */
+#bale-enc-toast-container {
+  position: fixed;
+  top: 165px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 999999;
+  pointer-events: none;
+  width: min(380px, calc(100vw - 40px));
+}
+
+.bale-enc-toast {
+  direction: rtl;
+  text-align: right;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.7;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-right: 4px solid #64748b;
+  border-radius: 8px;
+  padding: 9px 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.bale-enc-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.bale-enc-toast.success {
+  border-right-color: #10b981;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.bale-enc-toast.warning {
+  border-right-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.bale-enc-toast.error {
+  border-right-color: #ef4444;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.bale-enc-toast.info {
+  border-right-color: #3b82f6;
+  background: #eff6ff;
+  color: #1e40af;
 }

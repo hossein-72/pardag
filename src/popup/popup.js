@@ -1,36 +1,110 @@
 import { StorageManager } from '../shared/storage.js';
+import { IdentityManager } from '../shared/identity.js';
 import { CryptoEngine } from '../content/crypto/crypto.js';
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // ۱. مدیریت ۳ تب
+  // ---------------------------------------------------------------------------
+  // ۱. مدیریت تب‌ها
+  // ---------------------------------------------------------------------------
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabContents = document.querySelectorAll(".tab-content");
 
   function switchTab(targetTabId) {
-    tabBtns.forEach(b => {
+    tabBtns.forEach((b) => {
       b.classList.toggle("active", b.dataset.tab === targetTabId);
     });
-    tabContents.forEach(c => {
+    tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === targetTabId);
     });
   }
 
-  tabBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      switchTab(btn.dataset.tab);
-    });
+  tabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
-  // ۲. استخراج و اعمال شناسه چت و نام کاربر
+  // ---------------------------------------------------------------------------
+  // ۲. روش رمزنگاری
+  // ---------------------------------------------------------------------------
+  const modeRadios = Array.from(
+    document.querySelectorAll('input[name="enc-mode"]')
+  );
+  const passwordGroup = document.getElementById("password-group");
+  const rsaModeInfo = document.getElementById("rsa-mode-info");
+  const passwordInput = document.getElementById("password");
+
+  function getSelectedMode() {
+    const checked = document.querySelector('input[name="enc-mode"]:checked');
+    return checked ? checked.value : "rsa";
+  }
+
+  function updateModeUI() {
+    const isRsa = getSelectedMode() === "rsa";
+
+    passwordGroup.style.display = isRsa ? "none" : "block";
+    rsaModeInfo.style.display = isRsa ? "block" : "none";
+
+    if (isRsa) {
+      passwordInput.removeAttribute("required");
+      passwordInput.removeAttribute("minlength");
+    } else {
+      passwordInput.setAttribute("required", "");
+      passwordInput.setAttribute("minlength", "8");
+    }
+  }
+
+  function setSelectedMode(mode) {
+    modeRadios.forEach((r) => {
+      r.checked = r.value === mode;
+    });
+    updateModeUI();
+  }
+
+  modeRadios.forEach((radio) => {
+    radio.addEventListener("change", updateModeUI);
+  });
+
+  // ---------------------------------------------------------------------------
+  // ۳. عناصر فرم
+  // ---------------------------------------------------------------------------
+  const chatForm = document.getElementById("chat-form");
+  const submitBtn = document.getElementById("btn-submit-chat");
+  const cancelEditBtn = document.getElementById("btn-cancel-edit");
+  const pendingBanner = document.getElementById("pending-peer-banner");
+
+  // ---------------------------------------------------------------------------
+  // ۴. تشخیص چت فعال
+  // ---------------------------------------------------------------------------
+  async function findBaleTab() {
+    try {
+      const tabs = await chrome.tabs.query({ url: "https://web.bale.ai/*" });
+      if (tabs.length) {
+        return tabs.find((t) => t.active) || tabs[0];
+      }
+    } catch {}
+
+    try {
+      const [active] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true
+      });
+      return active || null;
+    } catch {
+      return null;
+    }
+  }
+
   async function detectActiveTabInfo() {
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!activeTab || !activeTab.url) return { uid: null, displayName: null };
+      const activeTab = await findBaleTab();
+      if (!activeTab || !activeTab.url) {
+        return { uid: null, displayName: null, mode: null, pendingPeer: null };
+      }
 
-      // پیام مستقیم به Content Script برای دریافت دقیق اطلاعات از DOM بله
       if (activeTab.id) {
         try {
-          const response = await chrome.tabs.sendMessage(activeTab.id, { action: "get_chat_info" });
+          const response = await chrome.tabs.sendMessage(activeTab.id, {
+            action: "get_chat_info"
+          });
           if (response && (response.uid || response.displayName)) {
             return response;
           }
@@ -38,9 +112,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       const href = activeTab.url;
-      if (!href.includes("bale.ai")) return { uid: null, displayName: null };
+      if (!href.includes("bale.ai")) {
+        return { uid: null, displayName: null, mode: null, pendingPeer: null };
+      }
 
-      const queryMatch = href.match(/[?&#](?:uid|id|peer_id)=([0-9a-zA-Z_-]+)/i);
+      const queryMatch = href.match(
+        /[?&#](?:uid|id|peer_id)=([0-9a-zA-Z_-]+)/i
+      );
       let detectedUid = queryMatch ? queryMatch[1] : null;
 
       if (!detectedUid) {
@@ -48,49 +126,77 @@ document.addEventListener("DOMContentLoaded", async () => {
         detectedUid = url.searchParams.get("uid") || url.searchParams.get("id");
       }
 
-      return { uid: detectedUid, displayName: null };
+      return {
+        uid: detectedUid,
+        displayName: null,
+        mode: null,
+        pendingPeer: null
+      };
     } catch {
-      return { uid: null, displayName: null };
+      return { uid: null, displayName: null, mode: null, pendingPeer: null };
     }
   }
 
   async function checkAndApplyChatContext() {
-    // الف. اولویت اول: پارامترهای ارسالی در URL یا pendingOpen
     const urlParams = new URLSearchParams(window.location.search);
     let targetUid = urlParams.get("uid");
     let targetDisplayName = urlParams.get("displayName");
+    let targetTab = urlParams.get("tab");
 
     if (!targetUid) {
-      const storageData = await chrome.storage.local.get(["pendingOpenUid", "pendingOpenDisplayName"]);
+      const storageData = await chrome.storage.local.get([
+        "pendingOpenUid",
+        "pendingOpenDisplayName",
+        "pendingOpenTab"
+      ]);
+
       if (storageData.pendingOpenUid) {
         targetUid = storageData.pendingOpenUid;
-        if (!targetDisplayName) targetDisplayName = storageData.pendingOpenDisplayName;
-        await chrome.storage.local.remove(["pendingOpenUid", "pendingOpenDisplayName"]);
+        if (!targetDisplayName) {
+          targetDisplayName = storageData.pendingOpenDisplayName;
+        }
+        if (!targetTab) targetTab = storageData.pendingOpenTab;
       }
     }
 
-    // ب. اولویت دوم: استخراج زنده از صفحه چت
+    // اطلاعات انتقالی سرویس‌ورکر در هر حالت فقط یک‌بار مصرف می‌شود.
+    await chrome.storage.local.remove([
+      "pendingOpenUid",
+      "pendingOpenDisplayName",
+      "pendingOpenTab"
+    ]);
+
     if (!targetUid || !targetDisplayName) {
       const liveInfo = await detectActiveTabInfo();
       if (!targetUid && liveInfo.uid) targetUid = liveInfo.uid;
-      if (!targetDisplayName && liveInfo.displayName) targetDisplayName = liveInfo.displayName;
+      if (!targetDisplayName && liveInfo.displayName) {
+        targetDisplayName = liveInfo.displayName;
+      }
     }
 
-    if (!targetUid) return;
+    if (pendingBanner) pendingBanner.style.display = "none";
 
-    // بررسی اینکه آیا این چت از قبل ذخیره شده یا خیر
+    if (!targetUid) {
+      setSelectedMode("rsa");
+      return;
+    }
+
+    const pendingPeer = await StorageManager.getPendingPeer("bale", targetUid);
     const chats = await StorageManager.getEncryptedChats();
-    const existingKey = `bale_${targetUid}`;
-    const existingChat = chats[existingKey];
+    const existingChat = chats[`bale_${targetUid}`];
 
     if (existingChat) {
-      // چت قبلاً ذخیره شده: بارگذاری اطلاعات کامل
-      isEditingUid = targetUid;
-      document.getElementById("messenger").value = existingChat.messenger || "bale";
+      const mode =
+        existingChat.mode || (existingChat.password ? "password" : "rsa");
+
+      setSelectedMode(mode);
+      document.getElementById("messenger").value =
+        existingChat.messenger || "bale";
       document.getElementById("uid").value = existingChat.uid;
       document.getElementById("uid").readOnly = true;
-      document.getElementById("displayName").value = existingChat.displayName || targetDisplayName || "";
-      document.getElementById("password").value = existingChat.password || "";
+      document.getElementById("displayName").value =
+        existingChat.displayName || targetDisplayName || "";
+      passwordInput.value = existingChat.password || "";
 
       submitBtn.textContent = "بروزرسانی تغییرات چت";
       cancelEditBtn.style.display = "block";
@@ -98,108 +204,268 @@ document.addEventListener("DOMContentLoaded", async () => {
       const banner = document.getElementById("detected-uid-banner");
       if (banner) {
         banner.style.display = "flex";
-        banner.querySelector("span").textContent = `اطلاعات چت «${existingChat.displayName}» لود شد.`;
+
+        let status = `اطلاعات چت «${existingChat.displayName}» لود شد.`;
+        if (mode === "rsa") {
+          if (!existingChat.peerPublicKey) {
+            status = "رمزنگاری خودکار فعال است؛ در انتظار کلید امنیتی مخاطب...";
+          } else if (existingChat.verified) {
+            status = "رمزنگاری خودکار فعال و کد امنیتی تأیید شده است.";
+          } else {
+            status =
+              "رمزنگاری خودکار فعال است. برای بررسی کد امنیتی به تب «لیست چت‌ها» بروید.";
+          }
+        }
+
+        banner.querySelector("span").textContent = status;
         document.getElementById("btn-use-detected").style.display = "none";
       }
-      switchTab("tab-add-chat");
+
+      if (pendingPeer && mode !== "rsa" && pendingBanner) {
+        pendingBanner.style.display = "flex";
+        pendingBanner.querySelector("span").textContent =
+          "مخاطب شما رمزنگاری خودکار را فعال کرده است. برای ادامه، روش رمزنگاری را تغییر دهید.";
+      }
+    } else if (pendingPeer) {
+      setSelectedMode("rsa");
+      document.getElementById("uid").value = targetUid;
+      document.getElementById("displayName").value =
+        pendingPeer.displayName || targetDisplayName || "";
+
+      if (pendingBanner) {
+        pendingBanner.style.display = "flex";
+        pendingBanner.querySelector("span").textContent =
+          `مخاطب «${pendingPeer.displayName || targetUid}» رمزنگاری خودکار را فعال کرده است.`;
+      }
+
+      submitBtn.focus();
     } else {
-      // چت جدید: پر کردن خودکار شناسه و نام مخاطب
+      setSelectedMode("rsa");
       document.getElementById("uid").value = targetUid;
       if (targetDisplayName) {
         document.getElementById("displayName").value = targetDisplayName;
       }
+      submitBtn.focus();
+    }
 
-      const banner = document.getElementById("detected-uid-banner");
-      if (banner) {
-        banner.style.display = "flex";
-        const label = targetDisplayName ? `چت «${targetDisplayName}» (شناسه: ${targetUid})` : `شناسه (${targetUid})`;
-        banner.querySelector("span").textContent = `${label} شناسایی شد.`;
-        document.getElementById("btn-use-detected").style.display = "none";
-      }
-
-      // هدایت فوکوس به فیلد پسورد در صورتی که نام خوانده شده باشد
-      if (targetDisplayName) {
-        document.getElementById("password").focus();
-      } else {
-        document.getElementById("displayName").focus();
-      }
+    if (targetTab === "chats-list") {
+      switchTab("tab-chats-list");
+    } else {
+      switchTab("tab-add-chat");
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // ۵. تشخیص خودکار شناسه
+  // ---------------------------------------------------------------------------
   document.getElementById("btn-detect-uid")?.addEventListener("click", async () => {
+    if (pendingBanner) pendingBanner.style.display = "none";
     const info = await detectActiveTabInfo();
+
     if (info.uid) {
       document.getElementById("uid").value = info.uid;
       if (info.displayName) {
         document.getElementById("displayName").value = info.displayName;
       }
-      alert(`اطلاعات چت دریافت شد.\nشناسه: ${info.uid}${info.displayName ? `\nنام: ${info.displayName}` : ''}`);
+      if (info.mode === "rsa" || info.mode === "password") {
+        setSelectedMode(info.mode);
+      }
+
+      const pending = await StorageManager.getPendingPeer("bale", info.uid);
+      if (pending && pendingBanner) {
+        pendingBanner.style.display = "flex";
+        pendingBanner.querySelector("span").textContent =
+          `مخاطب «${pending.displayName || info.uid}» رمزنگاری خودکار را فعال کرده است.`;
+      }
+
+      alert(
+        `اطلاعات چت دریافت شد.\nشناسه: ${info.uid}${
+          info.displayName ? `\nنام: ${info.displayName}` : ""
+        }`
+      );
     } else {
-      alert("شناسه چت در تب فعال شناسایی نشد. مطمئن شوید در صفحه گفتگوی بله هستید.");
+      alert(
+        "شناسه چت در تب فعال شناسایی نشد. مطمئن شوید در صفحه گفتگوی بله هستید."
+      );
     }
   });
 
-  // ۳. دکمه نمایش / مخفی‌سازی پسورد
+  // ---------------------------------------------------------------------------
+  // ۶. نمایش / مخفی‌سازی پسورد
+  // ---------------------------------------------------------------------------
   const togglePwdBtn = document.getElementById("btn-toggle-pwd");
-  const pwdInput = document.getElementById("password");
+
   togglePwdBtn.addEventListener("click", () => {
-    if (pwdInput.type === "password") {
-      pwdInput.type = "text";
+    if (passwordInput.type === "password") {
+      passwordInput.type = "text";
       togglePwdBtn.textContent = "🙈";
     } else {
-      pwdInput.type = "password";
+      passwordInput.type = "password";
       togglePwdBtn.textContent = "👁️";
     }
   });
 
-  // ۴. فرم افزودن / ویرایش چت
-  const chatForm = document.getElementById("chat-form");
-  const submitBtn = document.getElementById("btn-submit-chat");
-  const cancelEditBtn = document.getElementById("btn-cancel-edit");
-  let isEditingUid = null;
+  // ---------------------------------------------------------------------------
+  // ۷. فعال‌سازی درخواست در انتظار
+  // ---------------------------------------------------------------------------
+  document.getElementById("btn-enable-pending")?.addEventListener("click", () => {
+    setSelectedMode("rsa");
+    chatForm.requestSubmit();
+  });
 
+  // ---------------------------------------------------------------------------
+  // ۸. فرم افزودن / ویرایش چت
+  // ---------------------------------------------------------------------------
   chatForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+
     const messenger = document.getElementById("messenger").value;
     const uid = document.getElementById("uid").value.trim();
     const displayName = document.getElementById("displayName").value.trim();
-    const password = document.getElementById("password").value;
+    const mode = getSelectedMode();
+    const password = passwordInput.value;
 
     if (!uid) {
       alert("لطفاً شناسه چت (UID) را وارد کنید.");
       return;
     }
-    if (password.length < 8) {
+
+    if (!displayName) {
+      alert("لطفاً نام مخاطب یا عنوان چت را وارد کنید.");
+      return;
+    }
+
+    if (mode === "password" && password.length < 8) {
       alert("طول کلید/پسورد باید حداقل ۸ کاراکتر باشد.");
       return;
     }
 
-    const fingerprint = await CryptoEngine.getKeyFingerprint(password);
-    await StorageManager.saveChatConfig(messenger, uid, displayName, password, fingerprint, true);
+    const chats = await StorageManager.getEncryptedChats();
+    const existing = chats[`${messenger}_${uid}`] || null;
 
-    alert(`چت «${displayName}» با موفقیت ذخیره و فعال شد.`);
+    let fingerprint = "";
+    let extra = { mode };
+
+    if (mode === "password") {
+      fingerprint = await CryptoEngine.getKeyFingerprint(password);
+    } else {
+      let peerData = {
+        peerPublicKey: (existing && existing.peerPublicKey) || null,
+        peerSigningPublicKey:
+          (existing && existing.peerSigningPublicKey) || null,
+        peerFingerprint: (existing && existing.peerFingerprint) || null,
+        peerKeyReceivedAt: (existing && existing.peerKeyReceivedAt) || null,
+        verified: Boolean(existing && existing.verified),
+        keyChanged: Boolean(existing && existing.keyChanged),
+        announcedFor: (existing && existing.announcedFor) || null
+      };
+
+      const pending = await StorageManager.getPendingPeer(messenger, uid);
+      if (pending && pending.peerPublicKey && pending.peerSigningPublicKey) {
+        const pendingDiffers =
+          !peerData.peerPublicKey ||
+          pending.peerPublicKey !== peerData.peerPublicKey ||
+          pending.peerSigningPublicKey !== peerData.peerSigningPublicKey ||
+          pending.peerFingerprint !== peerData.peerFingerprint;
+
+        if (pendingDiffers) {
+          // کلید تازه‌تر مخاطب که در حالت پسورد دریافت شده بود را ترجیح می‌دهیم.
+          peerData = {
+            peerPublicKey: pending.peerPublicKey,
+            peerSigningPublicKey: pending.peerSigningPublicKey,
+            peerFingerprint: pending.peerFingerprint,
+            peerKeyReceivedAt: Date.now(),
+            verified: false,
+            keyChanged: Boolean(peerData.peerPublicKey),
+            announcedFor: null
+          };
+        }
+      }
+
+      fingerprint = peerData.peerFingerprint || "";
+      extra = { ...extra, ...peerData };
+    }
+
+    await StorageManager.saveChatConfig(
+      messenger,
+      uid,
+      displayName,
+      mode === "password" ? password : undefined,
+      fingerprint,
+      true,
+      extra
+    );
+
+    if (mode === "rsa") {
+      await StorageManager.removePendingPeer(messenger, uid);
+    }
+
+    if (mode === "rsa") {
+      alert(
+        `چت «${displayName}» با رمزنگاری خودکار فعال شد.\n` +
+          "کلید امنیتی شما به‌طور خودکار در چت ارسال می‌شود.\n" +
+          "برای تکمیل، مخاطب نیز باید افزونه را داشته باشد و چت را باز کند."
+      );
+    } else {
+      alert(`چت «${displayName}» با موفقیت ذخیره و فعال شد.`);
+    }
+
     resetForm();
     await renderChatsList();
     switchTab("tab-chats-list");
   });
 
-  cancelEditBtn.addEventListener("click", () => {
-    resetForm();
-  });
+  cancelEditBtn.addEventListener("click", resetForm);
 
   function resetForm() {
-    isEditingUid = null;
     chatForm.reset();
     submitBtn.textContent = "ذخیره و فعال‌سازی رمزنگاری";
     cancelEditBtn.style.display = "none";
     document.getElementById("uid").readOnly = false;
+    if (pendingBanner) pendingBanner.style.display = "none";
+    setSelectedMode("rsa");
   }
 
-  // ۵. رندر و جستجو در لیست چت‌ها
+  // ---------------------------------------------------------------------------
+  // ۹. رندر و جستجو در لیست چت‌ها
+  // ---------------------------------------------------------------------------
   const searchInput = document.getElementById("search-chats");
+
   searchInput.addEventListener("input", () => {
     renderChatsList(searchInput.value.trim().toLowerCase());
   });
+
+  async function findBaleTabForAction() {
+    const tab = await findBaleTab();
+    return tab && tab.id ? tab : null;
+  }
+
+  async function retryKeyExchange(chat) {
+    const tab = await findBaleTabForAction();
+    if (!tab) {
+      alert("لطفاً ابتدا چت را در بله باز کنید.");
+      return;
+    }
+
+    try {
+      const res = await chrome.tabs.sendMessage(tab.id, {
+        action: "retry_handshake",
+        uid: chat.uid
+      });
+
+      if (res && res.ok) {
+        alert("درخواست تبادل کلید ارسال شد.");
+      } else {
+        alert(
+          "چت فعال نیست. لطفاً این گفتگو را در بله باز کنید و دوباره تلاش کنید."
+        );
+      }
+    } catch {
+      alert(
+        "ارتباط با صفحه بله برقرار نشد. لطفاً صفحه را رفرش کنید و دوباره تلاش کنید."
+      );
+    }
+  }
 
   async function renderChatsList(filterQuery = "") {
     const listEl = document.getElementById("chats-list");
@@ -207,9 +473,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const chats = await StorageManager.getEncryptedChats();
     const entries = Object.values(chats);
 
-    if (countBadge) {
-      countBadge.textContent = String(entries.length);
-    }
+    if (countBadge) countBadge.textContent = String(entries.length);
 
     if (entries.length === 0) {
       listEl.innerHTML = `
@@ -222,12 +486,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    const filtered = entries.filter(c => {
+    const filtered = entries.filter((c) => {
       if (!filterQuery) return true;
       return (
         (c.displayName && c.displayName.toLowerCase().includes(filterQuery)) ||
         (c.uid && c.uid.includes(filterQuery)) ||
-        (c.fingerprint && c.fingerprint.toLowerCase().includes(filterQuery))
+        (c.fingerprint && c.fingerprint.toLowerCase().includes(filterQuery)) ||
+        (c.peerFingerprint &&
+          c.peerFingerprint.toLowerCase().includes(filterQuery))
       );
     });
 
@@ -236,26 +502,95 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    let identity = null;
+    try {
+      identity = await IdentityManager.getIdentity();
+    } catch {}
+
     listEl.innerHTML = "";
-    filtered.forEach(chat => {
+
+    for (const chat of filtered) {
+      const mode = chat.mode || (chat.password ? "password" : "rsa");
+      const isRsa = mode === "rsa";
+
+      let safetyNumber = "";
+      if (
+        isRsa &&
+        identity &&
+        chat.peerPublicKey &&
+        chat.peerSigningPublicKey
+      ) {
+        try {
+          safetyNumber = await CryptoEngine.computeSafetyNumber(identity, {
+            encryptionPublicKeySpki: chat.peerPublicKey,
+            signingPublicKeySpki: chat.peerSigningPublicKey,
+            chatUid: chat.uid
+          });
+        } catch {}
+      }
+
+      let statusBadge = "";
+      if (isRsa) {
+        if (!chat.peerPublicKey) {
+          statusBadge = `<span class="status-badge waiting">⏳ در انتظار کلید مخاطب</span>`;
+        } else if (chat.keyChanged) {
+          statusBadge = `<span class="status-badge key-change">⚠️ کلید مخاطب تغییر کرده</span>`;
+        } else if (chat.verified) {
+          statusBadge = `<span class="status-badge verified">✅ تأیید شده</span>`;
+        } else {
+          statusBadge = `<span class="status-badge unverified">🔓 تأیید نشده</span>`;
+        }
+      }
+
+      const safetyBlock = safetyNumber
+        ? `
+          <div class="safety-block">
+            <div class="safety-label">کد امنیتی (با مخاطب مقایسه کنید):</div>
+            <code class="safety-number">${escapeHtml(safetyNumber)}</code>
+            ${
+              chat.verified
+                ? ""
+                : `<button type="button" class="btn small verify-btn">تأیید کردم</button>`
+            }
+          </div>
+        `
+        : "";
+
+      const retryBlock =
+        isRsa && !chat.peerPublicKey
+          ? `<button type="button" class="btn small retry-btn">تلاش مجدد برای دریافت کلید</button>`
+          : "";
+
       const card = document.createElement("div");
       card.className = "chat-card";
       card.innerHTML = `
         <div class="chat-card-top">
           <div>
-            <div class="chat-card-title">${escapeHtml(chat.displayName)}</div>
+            <div class="chat-card-title">
+              ${escapeHtml(chat.displayName)}
+              <span class="mode-badge ${isRsa ? "rsa" : "password"}">${
+        isRsa ? "RSA" : "پسورد"
+      }</span>
+            </div>
             <div class="chat-card-meta">شناسه: ${escapeHtml(chat.uid)}</div>
           </div>
           <div class="chat-card-actions">
-            <button class="action-icon-btn edit-btn" title="ویرایش">✏️</button>
-            <button class="action-icon-btn del-btn" title="حذف">🗑️</button>
+            <button type="button" class="action-icon-btn edit-btn" title="ویرایش">✏️</button>
+            <button type="button" class="action-icon-btn del-btn" title="حذف">🗑️</button>
           </div>
         </div>
+        ${statusBadge ? `<div class="chat-card-status">${statusBadge}</div>` : ""}
+        ${safetyBlock}
+        ${retryBlock}
         <div class="chat-card-bottom">
-          <div class="fp-badge" title="Fingerprint (SHA-256)">FP: ${chat.fingerprint}</div>
+          <div class="fp-badge" title="Fingerprint">${
+            isRsa
+              ? `FP: ${escapeHtml(chat.peerFingerprint || "---")}`
+              : `FP: ${escapeHtml(chat.fingerprint || "---")}`
+          }</div>
           <label class="toggle-switch" title="روشن/خاموش کردن رمزنگاری در این چت">
-            <span>${chat.enabled ? "فعال" : "غیرفعال"}</span>
-            <input type="checkbox" ${chat.enabled ? "checked" : ""}>
+            <span>${chat.enabled !== false ? "فعال" : "غیرفعال"}</span>
+            <input type="checkbox" ${chat.enabled !== false ? "checked" : ""}>
             <span class="switch-slider"></span>
           </label>
         </div>
@@ -263,12 +598,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // ویرایش
       card.querySelector(".edit-btn").onclick = () => {
-        isEditingUid = chat.uid;
+        if (pendingBanner) pendingBanner.style.display = "none";
+        setSelectedMode(mode);
         document.getElementById("messenger").value = chat.messenger;
         document.getElementById("uid").value = chat.uid;
         document.getElementById("uid").readOnly = true;
         document.getElementById("displayName").value = chat.displayName;
-        document.getElementById("password").value = chat.password;
+        passwordInput.value = chat.password || "";
 
         submitBtn.textContent = "بروزرسانی تغییرات چت";
         cancelEditBtn.style.display = "block";
@@ -279,6 +615,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       card.querySelector(".del-btn").onclick = async () => {
         if (confirm(`آیا چت «${chat.displayName}» از لیست رمزنگاری حذف شود؟`)) {
           await StorageManager.removeChatConfig(chat.messenger, chat.uid);
+          await StorageManager.removePendingPeer(chat.messenger, chat.uid);
           await renderChatsList(searchInput.value.trim().toLowerCase());
         }
       };
@@ -286,16 +623,48 @@ document.addEventListener("DOMContentLoaded", async () => {
       // تغییر وضعیت سوئیچ
       const toggleInput = card.querySelector(".toggle-switch input");
       toggleInput.onchange = async () => {
-        const newState = await StorageManager.toggleChatEnabled(chat.messenger, chat.uid);
+        const newState = await StorageManager.toggleChatEnabled(
+          chat.messenger,
+          chat.uid
+        );
         chat.enabled = newState;
-        card.querySelector(".toggle-switch span").textContent = newState ? "فعال" : "غیرفعال";
+        card.querySelector(".toggle-switch span").textContent = newState
+          ? "فعال"
+          : "غیرفعال";
       };
 
+      // تأیید کد امنیتی
+      const verifyBtn = card.querySelector(".verify-btn");
+      if (verifyBtn) {
+        verifyBtn.onclick = async () => {
+          if (
+            !confirm(
+              "آیا کد امنیتی را با مخاطب خود مقایسه کرده‌اید و مطابقت دارد؟"
+            )
+          ) {
+            return;
+          }
+          await StorageManager.updateChatConfig(chat.messenger, chat.uid, {
+            verified: true,
+            keyChanged: false
+          });
+          await renderChatsList(searchInput.value.trim().toLowerCase());
+        };
+      }
+
+      // تلاش مجدد برای تبادل کلید
+      const retryBtn = card.querySelector(".retry-btn");
+      if (retryBtn) {
+        retryBtn.onclick = () => retryKeyExchange(chat);
+      }
+
       listEl.appendChild(card);
-    });
+    }
   }
 
-  // ۶. تب ۳: تولید کلید و اثر انگشت
+  // ---------------------------------------------------------------------------
+  // ۱۰. تولید کلید و تست‌ها
+  // ---------------------------------------------------------------------------
   const genKeyBtn = document.getElementById("btn-gen-key");
   const genKeyInput = document.getElementById("generated-key");
   const fpCode = document.getElementById("key-fingerprint");
@@ -312,14 +681,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     alert("کلید با موفقیت در کلیپ‌بورد کپی شد.");
   });
 
-  // ۷. آزمایشگر خودکار رمزنگاری (Self-Test)
   document.getElementById("btn-test-crypto").addEventListener("click", async () => {
     const out = document.getElementById("test-result");
-    out.textContent = "در حال اجرای اشتقاق PBKDF2 (۶۰۰٬۰۰۰ دور) و رمزنگاری AES-256-GCM...";
+    out.textContent =
+      "در حال اجرای اشتقاق PBKDF2 (۶۰۰٬۰۰۰ دور) و رمزنگاری AES-256-GCM...";
 
     try {
-      const testPass = genKeyInput.value || "sample-test-vector-pass-2026";
-      const samplePlaintext = "سلام! این یک پیام آزمایشی فوق‌محرمانه است 🔒\nخط دوم با کاراکترهای فارسی و خط جدید.";
+      const testPass =
+        genKeyInput.value || "sample-test-vector-pass-2026";
+      const samplePlaintext =
+        "سلام! این یک پیام آزمایشی فوق‌محرمانه است 🔒\nخط دوم با کاراکترهای فارسی و خط جدید.";
       const t0 = performance.now();
 
       const fp = await CryptoEngine.getKeyFingerprint(testPass);
@@ -341,6 +712,77 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  document.getElementById("btn-test-rsa").addEventListener("click", async () => {
+    const out = document.getElementById("rsa-test-result");
+    out.textContent =
+      "در حال تولید کلیدهای RSA/ECDSA و اجرای تست رمزنگاری هیبریدی...";
+
+    try {
+      const [identityA, identityB] = await Promise.all([
+        CryptoEngine.generateIdentity(),
+        CryptoEngine.generateIdentity()
+      ]);
+      const message =
+        "سلام! این یک پیام آزمایشی RSA است 🔐\nخط دوم با متن فارسی.";
+
+      const t0 = performance.now();
+      const encrypted = await CryptoEngine.encryptHybrid(message, {
+        peerEncryptionPublicKeySpki: identityB.encryption.publicKeySpki,
+        ownEncryptionPublicKeySpki: identityA.encryption.publicKeySpki,
+        ownSigningPrivateKeyJwk: identityA.signing.privateKeyJwk,
+        senderFingerprint: identityA.fingerprint
+      });
+
+      const result = await CryptoEngine.decryptHybrid(encrypted, {
+        privateKeyJwk: identityB.encryption.privateKeyJwk,
+        signingPublicKeySpki: identityA.signing.publicKeySpki
+      });
+
+      const t1 = performance.now();
+      const passed = result.plaintext === message;
+
+      // آزمون تشخیص دستکاری
+      let tamperDetected = false;
+      try {
+        const tampered = encrypted.slice(0, -6) + "AAAAAA";
+        await CryptoEngine.decryptHybrid(tampered, {
+          privateKeyJwk: identityB.encryption.privateKeyJwk,
+          signingPublicKeySpki: identityA.signing.publicKeySpki
+        });
+      } catch {
+        tamperDetected = true;
+      }
+
+      out.textContent = [
+        `وضعیت تست: ${passed ? "✅ موفق (PASS)" : "❌ ناموفق (FAIL)"}`,
+        `تشخیص دستکاری: ${tamperDetected ? "✅ بله" : "❌ خیر"}`,
+        `مدت زمان: ${(t1 - t0).toFixed(1)} میلی‌ثانیه`,
+        `هویت A: ${identityA.fingerprint}`,
+        `هویت B: ${identityB.fingerprint}`,
+        `طول پیام رمزشده: ${encrypted.length} کاراکتر`,
+        `پیش‌نمایش: ${encrypted.substring(0, 48)}...`,
+        `متن رمزگشایی‌شده: ${result.plaintext}`
+      ].join("\n");
+    } catch (err) {
+      out.textContent = `❌ خطا در تست RSA: ${err.message}`;
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // ۱۱. نمایش اثر انگشت هویت
+  // ---------------------------------------------------------------------------
+  function renderIdentityFingerprint() {
+    IdentityManager.getIdentity()
+      .then((identity) => {
+        const el = document.getElementById("identity-fingerprint");
+        if (el) el.textContent = identity.fingerprint;
+      })
+      .catch(() => {
+        const el = document.getElementById("identity-fingerprint");
+        if (el) el.textContent = "خطا در ساخت کلید";
+      });
+  }
+
   function escapeHtml(str) {
     if (!str) return "";
     const p = document.createElement("p");
@@ -348,7 +790,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     return p.innerHTML;
   }
 
-  // راه‌اندازی فوری
+  // ---------------------------------------------------------------------------
+  // راه‌اندازی
+  // ---------------------------------------------------------------------------
+  updateModeUI();
   await checkAndApplyChatContext();
   await renderChatsList();
+  renderIdentityFingerprint();
 });

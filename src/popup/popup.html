@@ -28,6 +28,11 @@
         <button type="button" id="btn-use-detected" class="btn link-btn">استفاده</button>
       </div>
 
+      <div id="pending-peer-banner" class="info-banner pending-banner" style="display: none;">
+        <span>مخاطب شما رمزنگاری خودکار را فعال کرده است.</span>
+        <button type="button" id="btn-enable-pending" class="btn link-btn">فعال‌سازی</button>
+      </div>
+
       <form id="chat-form">
         <div class="form-group">
           <label for="messenger">پیام‌رسان</label>
@@ -37,9 +42,38 @@
         </div>
 
         <div class="form-group">
+          <label>روش رمزنگاری</label>
+          <div class="mode-selector">
+            <label class="mode-option">
+              <input type="radio" name="enc-mode" value="rsa" checked>
+              <span class="mode-card">
+                <strong>تبادل خودکار کلید (RSA)</strong>
+                <small>بدون نیاز به پسورد مشترک — پیشنهادی</small>
+              </span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="enc-mode" value="password">
+              <span class="mode-card">
+                <strong>پسورد مشترک</strong>
+                <small>سازگار با نسخه‌های قبلی</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div id="rsa-mode-info" class="info-box">
+          <strong>🔐 رمزنگاری خودکار</strong>
+          <p>
+            هر دو طرف باید این افزونه را نصب داشته باشند. کلیدهای عمومی به‌طور
+            خودکار داخل چت تبادل می‌شوند و نیازی به ارسال پسورد نیست. برای امنیت
+            کامل، کد امنیتی هر چت را با مخاطب مقایسه کنید.
+          </p>
+        </div>
+
+        <div class="form-group">
           <label for="uid">شناسه چت (UID در آدرس چت)</label>
           <div class="input-with-action">
-            <input type="text" id="uid" placeholder="مثال: 4312346492" required pattern="[0-9a-zA-Z_-]+">
+            <input type="text" id="uid" placeholder="مثال: 4312346492" required pattern="[0-9a-zA-Z_\-]+">
             <button type="button" id="btn-detect-uid" class="btn small icon-btn" title="دریافت خودکار از تب فعال">🎯</button>
           </div>
           <small class="field-hint">شناسه عددی موجود در URL چت مانند ?uid=4312346492</small>
@@ -50,7 +84,7 @@
           <input type="text" id="displayName" placeholder="مثال: علی محمدی" required>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="password-group">
           <label for="password">کلید یا پسورد مشترک (حداقل ۸ کاراکتر)</label>
           <div class="input-with-action">
             <input type="password" id="password" placeholder="عبارت عبور مشترک طرفین" required minlength="8">
@@ -76,10 +110,27 @@
     <!-- تب ۳: تولید کلید و تست رمزنگاری -->
     <section id="tab-keys" class="tab-content">
       <div class="warning-box">
-        ⚠️ <strong>هشدار امنیتی:</strong> کلید را فقط از طریق یک کانال امن و خارج از بله به طرف مقابل برسانید و هرگز آن را در خود پیام‌رسان نفرستید.
+        ⚠️ <strong>هشدار امنیتی:</strong> در حالت «پسورد مشترک»، کلید را فقط از طریق یک کانال امن و خارج از بله به طرف مقابل برسانید. در حالت «تبادل خودکار کلید»، هیچ پسوردی را داخل پیام‌رسان نفرستید؛ اما برای امنیت کامل، کد امنیتی هر چت را با مخاطب مقایسه کنید.
       </div>
 
       <div class="card">
+        <h4>هویت رمزنگاری شما</h4>
+        <p class="hint">
+          این کلیدها به‌صورت خودکار ساخته می‌شوند و برای تبادل امنیتی و امضای
+          پیام‌ها استفاده می‌شوند.
+        </p>
+        <div class="fingerprint-row">
+          <span>اثر انگشت هویت:</span>
+          <code id="identity-fingerprint">در حال ساخت...</code>
+        </div>
+        <small class="field-hint">
+          این اثر انگشت، هویت کلی این نصب افزونه است و در همه چت‌ها یکسان می‌ماند؛
+          کد امنیتی هر چت جداگانه محاسبه می‌شود. برای تأیید هویت، کد امنیتی هر چت
+          را در تب «لیست چت‌ها» با مخاطب مقایسه کنید.
+        </small>
+      </div>
+
+      <div class="card" style="margin-top: 12px;">
         <h4>تولید کلید تصادفی استاندارد</h4>
         <p class="hint">کلید تصادفی ۲۵۶ بیتی امن (Base64) تولید کنید:</p>
         <button id="btn-gen-key" class="btn secondary full-width">تولید کلید تصادفی ۲۵۶ بیتی</button>
@@ -100,6 +151,15 @@
         <p class="hint">ارزیابی اجرای کامل PBKDF2 (۶۰۰٬۰۰۰ چرخه) و AES-256-GCM:</p>
         <button id="btn-test-crypto" class="btn secondary full-width">اجرای تست رمزنگاری</button>
         <pre id="test-result" class="test-output"></pre>
+      </div>
+
+      <div class="card" style="margin-top: 12px;">
+        <h4>آزمایش تبادل خودکار کلید (RSA)</h4>
+        <p class="hint">
+          تولید دو هویت موقت و بررسی رمزنگاری هیبریدی، امضای دیجیتال و رمزگشایی:
+        </p>
+        <button id="btn-test-rsa" class="btn secondary full-width">اجرای تست RSA</button>
+        <pre id="rsa-test-result" class="test-output"></pre>
       </div>
     </section>
   </div>
