@@ -303,6 +303,51 @@ export class BaleAdapter extends MessengerAdapter {
   }
 
   /**
+   * آیا این عنصر مربوط به پیش‌نمایش آخرین پیام در لیست چت‌هاست؟
+   * این پیش‌نمایش‌ها اغلب کوتاه/بریده‌شده‌اند و رمزگشایی آن‌ها در context چت جاری
+   * می‌تواند پیام «رمزگشایی ناموفق» را روی لیست چت‌ها نمایش دهد.
+   */
+  isChatListPreviewElement(el) {
+    if (!el || !el.closest) return false;
+
+    if (
+      el.closest(
+        'aside, nav, [role="navigation"], ' +
+          '[class*="last-message" i], [class*="lastMessage" i], ' +
+          '[class*="message-preview" i], [class*="messagePreview" i], ' +
+          '[class*="dialog-list" i], [class*="dialogList" i], ' +
+          '[class*="chat-list" i], [class*="chatList" i], ' +
+          '[class*="conversation-list" i], [class*="conversationList" i]'
+      )
+    ) {
+      return true;
+    }
+
+    // پیش‌نمایش‌ها معمولاً تک‌خطی و با ellipsis بریده می‌شوند.
+    let node = el;
+    for (
+      let depth = 0;
+      depth < 5 && node && node !== document.body;
+      depth++, node = node.parentElement
+    ) {
+      const style = window.getComputedStyle(node);
+      const clipped =
+        style.overflow === "hidden" ||
+        style.overflowX === "hidden" ||
+        style.overflowY === "hidden";
+      const lineClamped =
+        style.webkitLineClamp && style.webkitLineClamp !== "none";
+
+      if ((style.textOverflow === "ellipsis" || lineClamped) && clipped) {
+        return true;
+      }
+      if (style.whiteSpace === "nowrap" && clipped) return true;
+    }
+
+    return false;
+  }
+
+  /**
    * پیدا کردن تمام عناصر متنی حاوی پیشوندهای رمزنگاری (BALEENC1/BALEENC2/BALEENC-KEY)
    * به صورت مستقل از کلاس‌ها
    */
@@ -337,7 +382,16 @@ export class BaleAdapter extends MessengerAdapter {
       }
     }
 
-    return Array.from(elements);
+    const result = Array.from(elements);
+    for (const el of result) {
+      if (this.isChatListPreviewElement(el)) {
+        el.dataset.baleEncPreview = "1";
+      } else {
+        delete el.dataset.baleEncPreview;
+      }
+    }
+
+    return result;
   }
 
   /**

@@ -101,6 +101,13 @@
   font-weight: 600;
 }
 
+.bale-enc-preview {
+  display: inline-block;
+  color: #059669;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .bale-enc-error {
   color: #dc2626 !important;
   font-style: normal;

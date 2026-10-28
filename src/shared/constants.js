@@ -36,6 +36,7 @@ export const CONSTANTS = {
     UNKNOWN_SENDER: "🔒 پیام رمزنگاری‌شده (کلید فرستنده ناشناخته است)",
     KEY_EXCHANGE_SENT: "🔑 کلید امنیتی شما ارسال شد",
     KEY_EXCHANGE_RECEIVED: "🔑 کلید امنیتی مخاطب دریافت شد",
+    KEY_EXCHANGE_PREVIEW: "🔑 پیام تبادل کلید",
     KEY_EXCHANGE_INVALID: "⚠️ پیام تبادل کلید نامعتبر است",
     WAITING_PEER_KEY: "در انتظار کلید امنیتی مخاطب...",
     KEY_CHANGED:

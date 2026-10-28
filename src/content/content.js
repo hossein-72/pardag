@@ -296,6 +296,15 @@ class ContentController {
   }
 
   async handleKeyExchange(text, el) {
+    // پیش‌نمایش لیست چت‌ها فقط نمایشی است و نباید کلید را در چت جاری ذخیره کند.
+    if (el.dataset.baleEncPreview === "1") {
+      MessageDecorator.renderPreview(
+        el,
+        CONSTANTS.MESSAGES.KEY_EXCHANGE_PREVIEW
+      );
+      return;
+    }
+
     const bundle = CryptoEngine.parseKeyExchange(text);
 
     if (!bundle) {

@@ -23,6 +23,13 @@ export class MessageDecorator {
       ciphertextOverride || CONSTANTS.extractCiphertext(rawContent);
     if (!ciphertext) return;
 
+    // پیش‌نمایش لیست چت‌ها ممکن است متن بریده‌شده باشد؛ رمزگشایی آن در context
+    // چت جاری می‌تواند خطای کاذب «کلید نامعتبر» تولید کند.
+    if (el.dataset.baleEncPreview === "1") {
+      this.renderPreview(el);
+      return;
+    }
+
     const isHybrid = ciphertext.startsWith(CONSTANTS.PREFIXES.HYBRID);
     const peerMarker = chatConfig ? chatConfig.peerFingerprint || "none" : "none";
     const marker = `${ciphertext}|${peerMarker}`;
@@ -184,6 +191,17 @@ export class MessageDecorator {
   // ---------------------------------------------------------------------------
   // نمایش
   // ---------------------------------------------------------------------------
+
+  static renderPreview(el, text = CONSTANTS.MESSAGES.DECRYPTED_BADGE) {
+    el.innerHTML = "";
+    const badge = document.createElement("span");
+    badge.className = "bale-enc-preview";
+    badge.textContent = text;
+    el.appendChild(badge);
+
+    delete el.dataset.baleEncFailed;
+    delete el.dataset.baleEncCiphertext;
+  }
 
   static renderSuccess(el, plaintext) {
     // ایجاد ساختار امن بدون دستکاری زمان یا آیکون تیک خوانده‌شدن پیام
