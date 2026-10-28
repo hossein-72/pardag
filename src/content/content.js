@@ -20,6 +20,9 @@ class ContentController {
     this.lastUrl = window.location.href;
     this.lastHandshakeAttempt = 0;
     this.pendingNotified = new Set();
+    this.editRestoreTimer = null;
+    this.editRestoreInFlight = false;
+    this.lastSendAt = 0;
   }
 
   async init() {
@@ -27,6 +30,7 @@ class ContentController {
     this.setupNavigationObservers();
     this.setupMessageObserver();
     this.setupSendInterceptors();
+    this.setupEditModeRestorer();
     this.setupStorageListener();
     this.setupMessageListener();
   }
@@ -259,6 +263,7 @@ class ContentController {
       } else {
         this.adapter.triggerEnter(inputEl);
       }
+      this.lastSendAt = Date.now();
 
       // رویداد ارسال به‌صورت همگام پردازش می‌شود؛ از این لحظه اجازه می‌دهیم
       // پیام‌های بعدی کاربر دوباره از مسیر رمزنگاری عبور کنند.
@@ -484,6 +489,9 @@ class ContentController {
     setInterval(() => {
       this.checkUrlChange();
 
+      // پشتیبان برای زمانی که بله مقدار کادر ویرایش را بدون رویداد DOM عوض کند.
+      this.restoreEditInput().catch(() => {});
+
       // اطمینان از حضور نشانگر وضعیت و دکمه تنظیم در صفحه چت
       const hasCornerBadge = document.getElementById(
         LockButtonUI.FLOATING_BUTTON_ID
@@ -521,6 +529,9 @@ class ContentController {
 
   setupMessageObserver() {
     const observer = new MutationObserver((mutations) => {
+      // بله هنگام کلیک روی «ویرایش» متن ciphertext را داخل کادر پیام می‌گذارد.
+      this.scheduleEditRestore();
+
       // تغییر مسیر بله (مثلاً باز شدن جستجو) معمولاً با تغییر DOM همراه است؛
       // بنابراین بدون صبر کردن تا تیک بعدی، وضعیت نشانگر را همگام می‌کنیم.
       if (window.location.href !== this.lastUrl) {
@@ -551,6 +562,100 @@ class ContentController {
       subtree: true,
       characterData: true
     });
+  }
+
+  setupEditModeRestorer() {
+    document.addEventListener(
+      "input",
+      (e) => {
+        const inputEl = this.adapter.getInputElement();
+        if (inputEl && (inputEl === e.target || inputEl.contains(e.target))) {
+          this.scheduleEditRestore();
+        }
+      },
+      true
+    );
+  }
+
+  scheduleEditRestore() {
+    if (this.editRestoreTimer) return;
+    this.editRestoreTimer = setTimeout(() => {
+      this.editRestoreTimer = null;
+      this.restoreEditInput().catch((err) =>
+        console.warn("[Bale E2EE] edit restore error:", err)
+      );
+    }, 120);
+  }
+
+  /**
+   * بله هنگام ویرایش، متن ciphertext را در کادر پیام قرار می‌دهد.
+   * این متد در صورت امکان متن اصلی را برمی‌گرداند و در غیر این صورت
+   * کادر را پاک می‌کند تا ciphertext خام نمایش داده نشود.
+   */
+  async restoreEditInput() {
+    if (this.isEncryptingAndSending || this.isSendingControl) return;
+    if (Date.now() - this.lastSendAt < 1500) return;
+    if (this.editRestoreInFlight) return;
+
+    const inputEl = this.adapter.getInputElement();
+    if (!inputEl) return;
+
+    const raw = (this.adapter.getInputValue(inputEl) || "").trim();
+    const cleanRaw = CONSTANTS.stripFormatting(raw).trim();
+    if (!cleanRaw) return;
+
+    // پیام تبادل کلید قابل ویرایش نیست؛ از نمایش کلید خام جلوگیری می‌کنیم.
+    if (
+      cleanRaw.startsWith(CONSTANTS.PREFIXES.KEY_EXCHANGE) &&
+      CryptoEngine.parseKeyExchange(cleanRaw)
+    ) {
+      this.adapter.setInputValue(inputEl, "");
+      ToastUI.show(
+        CONSTANTS.MESSAGES.EDIT_KEY_EXCHANGE_CLEARED,
+        "info",
+        5000
+      );
+      return;
+    }
+
+    const ciphertext = CONSTANTS.extractCiphertext(cleanRaw);
+    if (!ciphertext) return;
+
+    // فقط وقتی کل کادر دقیقاً یک ciphertext است (حالت ویرایش بله).
+    if (cleanRaw !== ciphertext) return;
+
+    this.editRestoreInFlight = true;
+    try {
+      const plaintext = await MessageDecorator.decryptForEdit(
+        ciphertext,
+        this.currentChatConfig
+      );
+
+      // ممکن است کاربر یا بله در فاصله رمزگشایی، کادر را تغییر داده باشد.
+      const currentInput = this.adapter.getInputElement();
+      const currentValue = currentInput
+        ? (this.adapter.getInputValue(currentInput) || "").trim()
+        : "";
+      if (
+        currentInput !== inputEl ||
+        CONSTANTS.stripFormatting(currentValue).trim() !== ciphertext
+      ) {
+        return;
+      }
+
+      if (plaintext !== null) {
+        this.adapter.setInputValue(inputEl, plaintext);
+      } else {
+        this.adapter.setInputValue(inputEl, "");
+        ToastUI.show(
+          CONSTANTS.MESSAGES.EDIT_TEXT_UNAVAILABLE,
+          "warning",
+          5000
+        );
+      }
+    } finally {
+      this.editRestoreInFlight = false;
+    }
   }
 
   scanAllMessages() {
@@ -696,6 +801,7 @@ class ContentController {
       } else {
         this.adapter.triggerEnter(inputEl);
       }
+      this.lastSendAt = Date.now();
 
       // ارسال برنامه‌ای به‌صورت همگام انجام شده است؛ قفل را فوراً آزاد می‌کنیم
       // تا پیام بعدی کاربر در همین فاصله به‌صورت خام ارسال نشود.

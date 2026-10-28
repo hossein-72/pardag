@@ -188,6 +188,74 @@ export class MessageDecorator {
     return null;
   }
 
+  /**
+   * بازیابی متن اصلی یک ciphertext هنگام ورود بله به حالت ویرایش.
+   * ابتدا از کش نشست و سپس با کلید/پسوردهای موجود تلاش می‌کند.
+   */
+  static async decryptForEdit(ciphertext, chatConfig) {
+    const token = CONSTANTS.extractCiphertext(ciphertext);
+    if (!token) return null;
+
+    if (this.sessionCache.has(token)) {
+      return this.sessionCache.get(token);
+    }
+
+    if (token.startsWith(CONSTANTS.PREFIXES.HYBRID)) {
+      let identity;
+      try {
+        identity = await IdentityManager.getIdentity();
+      } catch {
+        return null;
+      }
+
+      const kid = CryptoEngine.peekHybridKid(token);
+      let signingPublicKeySpki = null;
+
+      if (kid && kid === identity.fingerprint) {
+        signingPublicKeySpki = identity.signing.publicKeySpki;
+      } else {
+        signingPublicKeySpki = await this.resolvePeerSigningKey(kid, chatConfig);
+      }
+
+      if (!signingPublicKeySpki) return null;
+
+      try {
+        const result = await CryptoEngine.decryptHybrid(token, {
+          privateKeyJwk: identity.encryption.privateKeyJwk,
+          signingPublicKeySpki
+        });
+        this.sessionCache.set(token, result.plaintext);
+        return result.plaintext;
+      } catch {
+        return null;
+      }
+    }
+
+    const passwords = [];
+    if (chatConfig && chatConfig.password) {
+      passwords.push(chatConfig.password);
+    }
+
+    const allChats = await StorageManager.getEncryptedChats();
+    for (const cfg of Object.values(allChats)) {
+      if (cfg.password && !passwords.includes(cfg.password)) {
+        passwords.push(cfg.password);
+      }
+    }
+
+    for (const password of passwords) {
+      try {
+        const plaintext = await CryptoEngine.decrypt(token, password);
+        this.sessionCache.set(token, plaintext);
+        return plaintext;
+      } catch {
+        // پسورد بعدی را امتحان می‌کنیم
+      }
+    }
+
+    return null;
+  }
+
   // ---------------------------------------------------------------------------
   // نمایش
   // ---------------------------------------------------------------------------
