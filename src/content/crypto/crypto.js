@@ -21,7 +21,6 @@ export class CryptoEngine {
   }
 
   static base64ToBuffer(base64) {
-    // پاکسازی فاصله‌ها، شکستگی‌های خط و کاراکترهای نامرئی یونیکد/BiDi
     const cleanBase64 = String(base64).replace(/[^A-Za-z0-9+/=]/g, '');
     const binary = atob(cleanBase64);
     const bytes = new Uint8Array(binary.length);
@@ -54,7 +53,7 @@ export class CryptoEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // حالت پسورد مشترک (BALEENC1) — برای سازگاری با نسخه قبلی
+  // حالت پسورد مشترک (PARDAG1)
   // ---------------------------------------------------------------------------
 
   static generateRandomKeyBase64() {
@@ -86,7 +85,7 @@ export class CryptoEngine {
       },
       baseKey,
       { name: "AES-GCM", length: CONSTANTS.KEY_LENGTH },
-      true, // extractable برای محاسبه fingerprint
+      true,
       ["encrypt", "decrypt"]
     );
 
@@ -102,10 +101,6 @@ export class CryptoEngine {
     return this.hex(hashBuffer).substring(0, 8);
   }
 
-  /**
-   * رمزنگاری متن با پسورد مشترک
-   * خروجی: BALEENC1:<base64(IV(12B) || ciphertext || GCM_tag(16B))>
-   */
   static async encrypt(plaintext, password) {
     const { aesKey } = await this.deriveKeyAndRaw(password);
     const iv = crypto.getRandomValues(new Uint8Array(CONSTANTS.IV_LENGTH));
@@ -129,19 +124,24 @@ export class CryptoEngine {
     return CONSTANTS.PREFIXES.PASSWORD + this.bufferToBase64(combined);
   }
 
-  /**
-   * رمزگشایی متن BALEENC1 با پسورد مشترک
-   */
   static async decrypt(payload, password) {
     const token = CONSTANTS.extractCiphertext(payload);
-    if (!token || !token.startsWith(CONSTANTS.PREFIXES.PASSWORD)) {
+    if (!token) {
       throw new Error("Invalid prefix");
     }
 
-    const base64Data = token.slice(CONSTANTS.PREFIXES.PASSWORD.length);
+    let prefixLen = 0;
+    if (token.startsWith(CONSTANTS.PREFIXES.PASSWORD)) {
+      prefixLen = CONSTANTS.PREFIXES.PASSWORD.length;
+    } else if (token.startsWith(CONSTANTS.LEGACY_PREFIXES.PASSWORD)) {
+      prefixLen = CONSTANTS.LEGACY_PREFIXES.PASSWORD.length;
+    } else {
+      throw new Error("Invalid prefix");
+    }
+
+    const base64Data = token.slice(prefixLen);
     const combined = this.base64ToBuffer(base64Data);
 
-    // حداقل طول: 12 بایت IV + 16 بایت تگ = 28 بایت
     if (combined.byteLength < 28) {
       throw new Error("Payload too short");
     }
@@ -165,7 +165,7 @@ export class CryptoEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // هویت رمزنگاری: RSA-OAEP برای رمزنگاری + ECDSA برای امضا
+  // هویت رمزنگاری: RSA-OAEP + ECDH P-256 برای رمزنگاری + ECDSA P-256 برای امضا
   // ---------------------------------------------------------------------------
 
   static async generateRsaKeyPair() {
@@ -178,6 +178,21 @@ export class CryptoEngine {
       },
       true,
       ["encrypt", "decrypt"]
+    );
+
+    const publicKeySpki = this.bufferToBase64(
+      await crypto.subtle.exportKey("spki", keyPair.publicKey)
+    );
+    const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+
+    return { publicKeySpki, privateKeyJwk };
+  }
+
+  static async generateEcdhKeyPair() {
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: CONSTANTS.ECDH_CURVE || "P-256" },
+      true,
+      ["deriveKey", "deriveBits"]
     );
 
     const publicKeySpki = this.bufferToBase64(
@@ -204,8 +219,9 @@ export class CryptoEngine {
   }
 
   static async generateIdentity() {
-    const [encryption, signing] = await Promise.all([
+    const [encryption, ecdh, signing] = await Promise.all([
       this.generateRsaKeyPair(),
+      this.generateEcdhKeyPair(),
       this.generateEcdsaKeyPair()
     ]);
     const fingerprint = await this.getIdentityFingerprint(
@@ -216,7 +232,9 @@ export class CryptoEngine {
     return {
       version: 1,
       encryption,
+      ecdh,
       signing,
+      history: [],
       fingerprint,
       createdAt: Date.now()
     };
@@ -247,6 +265,26 @@ export class CryptoEngine {
       { name: "RSA-OAEP", hash: CONSTANTS.RSA_HASH },
       false,
       ["decrypt"]
+    );
+  }
+
+  static async importEcdhPublicKey(spkiBase64) {
+    return crypto.subtle.importKey(
+      "spki",
+      this.base64ToBuffer(spkiBase64),
+      { name: "ECDH", namedCurve: CONSTANTS.ECDH_CURVE || "P-256" },
+      true,
+      []
+    );
+  }
+
+  static async importEcdhPrivateKey(privateKeyJwk) {
+    return crypto.subtle.importKey(
+      "jwk",
+      privateKeyJwk,
+      { name: "ECDH", namedCurve: CONSTANTS.ECDH_CURVE || "P-256" },
+      false,
+      ["deriveKey", "deriveBits"]
     );
   }
 
@@ -291,18 +329,9 @@ export class CryptoEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // پیام هیبریدی (BALEENC2):
-  // AES-256-GCM برای متن + RSA-OAEP برای بسته‌بندی کلید AES + ECDSA برای امضا
+  // پیام هیبریدی (PARDAG2)
   // ---------------------------------------------------------------------------
 
-  /**
-   * @param {string} plaintext
-   * @param {object} options
-   * @param {string} options.peerEncryptionPublicKeySpki
-   * @param {string} options.ownEncryptionPublicKeySpki
-   * @param {object} options.ownSigningPrivateKeyJwk
-   * @param {string} options.senderFingerprint
-   */
   static async encryptHybrid(plaintext, options) {
     const {
       peerEncryptionPublicKeySpki,
@@ -316,7 +345,6 @@ export class CryptoEngine {
       throw new Error("Missing own identity");
     }
 
-    // ۱. کلید AES تصادفی برای همین پیام
     const aesKeyBytes = crypto.getRandomValues(
       new Uint8Array(CONSTANTS.AES_KEY_LENGTH)
     );
@@ -336,7 +364,6 @@ export class CryptoEngine {
     );
     const ciphertext = new Uint8Array(cipherBuffer);
 
-    // ۲. بسته‌بندی کلید AES برای مخاطب و برای خودمان (خواندن روی دستگاه‌های دیگر)
     const peerWrapped = await this.wrapAesKey(aesKeyBytes, peerEncryptionPublicKeySpki);
     const selfWrapped = await this.wrapAesKey(aesKeyBytes, ownEncryptionPublicKeySpki);
 
@@ -344,7 +371,7 @@ export class CryptoEngine {
     const kidBytes = this.encoder.encode(kid);
 
     const meta = this.concatBytes(
-      new Uint8Array([1]), // version
+      new Uint8Array([1]),
       new Uint8Array([kidBytes.length]),
       kidBytes,
       this.u16Bytes(peerWrapped.length),
@@ -357,7 +384,6 @@ export class CryptoEngine {
 
     const signedData = this.concatBytes(meta, ciphertext);
 
-    // ۳. امضای دیجیتال برای اثبات اینکه پیام واقعاً از طرف فرستنده است
     const signingKey = await this.importEcdsaPrivateKey(ownSigningPrivateKeyJwk);
     const signature = new Uint8Array(
       await crypto.subtle.sign(
@@ -440,20 +466,22 @@ export class CryptoEngine {
     };
   }
 
-  /**
-   * رمزگشایی و اعتبارسنجی پیام BALEENC2
-   * @param {string} payload
-   * @param {object} options
-   * @param {object} options.privateKeyJwk - کلید خصوصی RSA خودمان
-   * @param {string} options.signingPublicKeySpki - کلید عمومی امضای فرستنده
-   */
   static async decryptHybrid(payload, options = {}) {
     const token = CONSTANTS.extractCiphertext(payload);
-    if (!token || !token.startsWith(CONSTANTS.PREFIXES.HYBRID)) {
+    if (!token) {
       throw new Error("Invalid hybrid payload");
     }
 
-    const base64Data = token.slice(CONSTANTS.PREFIXES.HYBRID.length);
+    let prefixLen = 0;
+    if (token.startsWith(CONSTANTS.PREFIXES.HYBRID)) {
+      prefixLen = CONSTANTS.PREFIXES.HYBRID.length;
+    } else if (token.startsWith(CONSTANTS.LEGACY_PREFIXES.HYBRID)) {
+      prefixLen = CONSTANTS.LEGACY_PREFIXES.HYBRID.length;
+    } else {
+      throw new Error("Invalid hybrid payload");
+    }
+
+    const base64Data = token.slice(prefixLen);
     const data = this.unpackHybrid(base64Data);
 
     if (!options.signingPublicKeySpki) {
@@ -469,17 +497,30 @@ export class CryptoEngine {
     );
 
     if (!valid) throw new Error("INVALID_SIGNATURE");
-    if (!options.privateKeyJwk) throw new Error("Missing private key");
 
-    // یکی از دو نسخه بسته‌بندی‌شده باید با کلید خصوصی ما باز شود.
-    let aesKeyBytes = null;
-    for (const wrapped of [data.peerWrapped, data.selfWrapped]) {
-      try {
-        aesKeyBytes = await this.unwrapAesKey(wrapped, options.privateKeyJwk);
-        break;
-      } catch {
-        // نسخه مربوط به طرف مقابل است؛ نسخه بعدی را امتحان می‌کنیم.
+    const candidatePrivateKeys = [];
+    if (options.privateKeyJwk) candidatePrivateKeys.push(options.privateKeyJwk);
+    if (Array.isArray(options.privateKeyJwks)) {
+      for (const k of options.privateKeyJwks) {
+        if (k && !candidatePrivateKeys.includes(k)) {
+          candidatePrivateKeys.push(k);
+        }
       }
+    }
+
+    if (candidatePrivateKeys.length === 0) throw new Error("Missing private key");
+
+    let aesKeyBytes = null;
+    for (const privJwk of candidatePrivateKeys) {
+      for (const wrapped of [data.peerWrapped, data.selfWrapped]) {
+        try {
+          aesKeyBytes = await this.unwrapAesKey(wrapped, privJwk);
+          break;
+        } catch {
+          // ادامه به کلید کاندید بعدی
+        }
+      }
+      if (aesKeyBytes) break;
     }
 
     if (!aesKeyBytes) throw new Error("KEY_UNWRAP_FAILED");
@@ -504,12 +545,219 @@ export class CryptoEngine {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // پیام هیبریدی فشرده مبتنی بر ECDH P-256 + HKDF-SHA256 + AES-GCM (PARDAG3)
+  // ---------------------------------------------------------------------------
+
+  static async deriveEcdhAesKey(ownEcdhPrivateKeyJwk, peerEcdhPublicKeySpki, saltBytes, infoStr = "bale-e2ee-ecdh-v1") {
+    const privateKey = await this.importEcdhPrivateKey(ownEcdhPrivateKeyJwk);
+    const publicKey = await this.importEcdhPublicKey(peerEcdhPublicKeySpki);
+
+    const sharedBits = await crypto.subtle.deriveBits(
+      { name: "ECDH", public: publicKey },
+      privateKey,
+      256
+    );
+
+    const hkdfKey = await crypto.subtle.importKey(
+      "raw",
+      sharedBits,
+      "HKDF",
+      false,
+      ["deriveKey"]
+    );
+
+    return crypto.subtle.deriveKey(
+      {
+        name: "HKDF",
+        hash: "SHA-256",
+        salt: saltBytes,
+        info: this.encoder.encode(infoStr)
+      },
+      hkdfKey,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  static async encryptEcdh(plaintext, options) {
+    const {
+      peerEcdhPublicKeySpki,
+      ownEcdhPrivateKeyJwk,
+      ownSigningPrivateKeyJwk,
+      senderFingerprint
+    } = options || {};
+
+    if (!peerEcdhPublicKeySpki) throw new Error("Missing peer ECDH public key");
+    if (!ownEcdhPrivateKeyJwk || !ownSigningPrivateKeyJwk) {
+      throw new Error("Missing own ECDH/signing identity");
+    }
+
+    const iv = crypto.getRandomValues(new Uint8Array(CONSTANTS.IV_LENGTH));
+    const kid = String(senderFingerprint || "").trim().slice(0, 16);
+    const kidBytes = this.encoder.encode(kid);
+
+    const aesKey = await this.deriveEcdhAesKey(
+      ownEcdhPrivateKeyJwk,
+      peerEcdhPublicKeySpki,
+      iv,
+      `bale-e2ee-ecdh-v1:${kid}`
+    );
+
+    const cipherBuffer = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, tagLength: 128 },
+      aesKey,
+      this.encoder.encode(plaintext)
+    );
+    const ciphertext = new Uint8Array(cipherBuffer);
+
+    const meta = this.concatBytes(
+      new Uint8Array([1]),
+      new Uint8Array([kidBytes.length]),
+      kidBytes,
+      new Uint8Array([iv.length]),
+      iv
+    );
+
+    const signedData = this.concatBytes(meta, ciphertext);
+    const signingKey = await this.importEcdsaPrivateKey(ownSigningPrivateKeyJwk);
+    const signature = new Uint8Array(
+      await crypto.subtle.sign(
+        { name: "ECDSA", hash: CONSTANTS.RSA_HASH },
+        signingKey,
+        signedData
+      )
+    );
+
+    const payload = this.concatBytes(
+      meta,
+      this.u16Bytes(signature.length),
+      signature,
+      ciphertext
+    );
+
+    return CONSTANTS.PREFIXES.ECDH + this.bufferToBase64(payload);
+  }
+
+  static unpackEcdh(base64Data) {
+    const bytes = this.base64ToBuffer(base64Data);
+    let offset = 0;
+
+    const ensure = (n) => {
+      if (offset + n > bytes.length) throw new Error("Malformed ECDH payload");
+    };
+    const readU8 = () => {
+      ensure(1);
+      return bytes[offset++];
+    };
+    const readU16 = () => {
+      ensure(2);
+      const val = (bytes[offset] << 8) | bytes[offset + 1];
+      offset += 2;
+      return val;
+    };
+    const readBytes = (len) => {
+      ensure(len);
+      const val = bytes.slice(offset, offset + len);
+      offset += len;
+      return val;
+    };
+
+    const version = readU8();
+    if (version !== 1) throw new Error("Unsupported ECDH version");
+
+    const kidLength = readU8();
+    const kid = this.decoder.decode(readBytes(kidLength));
+    const iv = readBytes(readU8());
+    if (iv.length !== CONSTANTS.IV_LENGTH) throw new Error("Invalid IV length");
+
+    const metaEnd = offset;
+    const signature = readBytes(readU16());
+    const ciphertext = bytes.slice(offset);
+
+    if (signature.length === 0) throw new Error("Missing signature");
+    if (ciphertext.length < 16) throw new Error("Ciphertext too short");
+
+    const signedData = this.concatBytes(bytes.slice(0, metaEnd), ciphertext);
+
+    return { version, kid, iv, signature, ciphertext, signedData };
+  }
+
+  static async decryptEcdh(payload, options = {}) {
+    const token = CONSTANTS.extractCiphertext(payload);
+    if (!token) {
+      throw new Error("Invalid ECDH payload");
+    }
+
+    let prefixLen = 0;
+    if (token.startsWith(CONSTANTS.PREFIXES.ECDH)) {
+      prefixLen = CONSTANTS.PREFIXES.ECDH.length;
+    } else if (token.startsWith(CONSTANTS.LEGACY_PREFIXES.ECDH)) {
+      prefixLen = CONSTANTS.LEGACY_PREFIXES.ECDH.length;
+    } else {
+      throw new Error("Invalid ECDH payload");
+    }
+
+    const base64Data = token.slice(prefixLen);
+    const data = this.unpackEcdh(base64Data);
+
+    if (!options.signingPublicKeySpki) {
+      throw new Error("UNKNOWN_SENDER");
+    }
+
+    const verifyKey = await this.importEcdsaPublicKey(options.signingPublicKeySpki);
+    const valid = await crypto.subtle.verify(
+      { name: "ECDSA", hash: CONSTANTS.RSA_HASH },
+      verifyKey,
+      data.signature,
+      data.signedData
+    );
+
+    if (!valid) throw new Error("INVALID_SIGNATURE");
+
+    if (!options.ownEcdhPrivateKeyJwk || !options.peerEcdhPublicKeySpki) {
+      throw new Error("KEY_UNWRAP_FAILED");
+    }
+
+    const aesKey = await this.deriveEcdhAesKey(
+      options.ownEcdhPrivateKeyJwk,
+      options.peerEcdhPublicKeySpki,
+      data.iv,
+      `bale-e2ee-ecdh-v1:${data.kid}`
+    );
+
+    const plaintextBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: data.iv, tagLength: 128 },
+      aesKey,
+      data.ciphertext
+    );
+
+    return {
+      plaintext: this.decoder.decode(plaintextBuffer),
+      kid: data.kid
+    };
+  }
+
   static peekHybridKid(payload) {
     try {
       const token = CONSTANTS.extractCiphertext(payload);
-      if (!token || !token.startsWith(CONSTANTS.PREFIXES.HYBRID)) return null;
+      if (!token) return null;
 
-      const bytes = this.base64ToBuffer(token.slice(CONSTANTS.PREFIXES.HYBRID.length));
+      let prefixLen = 0;
+      if (token.startsWith(CONSTANTS.PREFIXES.HYBRID)) {
+        prefixLen = CONSTANTS.PREFIXES.HYBRID.length;
+      } else if (token.startsWith(CONSTANTS.LEGACY_PREFIXES.HYBRID)) {
+        prefixLen = CONSTANTS.LEGACY_PREFIXES.HYBRID.length;
+      } else if (token.startsWith(CONSTANTS.PREFIXES.ECDH)) {
+        prefixLen = CONSTANTS.PREFIXES.ECDH.length;
+      } else if (token.startsWith(CONSTANTS.LEGACY_PREFIXES.ECDH)) {
+        prefixLen = CONSTANTS.LEGACY_PREFIXES.ECDH.length;
+      } else {
+        return null;
+      }
+
+      const bytes = this.base64ToBuffer(token.slice(prefixLen));
       if (bytes.length < 2 || bytes[0] !== 1) return null;
 
       const kidLength = bytes[1];
@@ -522,7 +770,7 @@ export class CryptoEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // تبادل کلید و کد امنیتی
+  // تبادل کلید (PARDAG-KEY) + بررسی انقضای زمانی درخواست (TTL)
   // ---------------------------------------------------------------------------
 
   static formatKeyExchange(identity) {
@@ -532,27 +780,222 @@ export class CryptoEngine {
     );
   }
 
+  static generateSessionId() {
+    const bytes = crypto.getRandomValues(new Uint8Array(6));
+    return this.hex(bytes);
+  }
+
+  /**
+   * بررسی می‌کند آیا از زمان ارسال بسته تبادل کلید بیش از بازه مجاز (KEY_EXCHANGE_TTL_MS) گذشته است یا خیر.
+   * اگر ساعت سیستم فرستنده کمی جلوتر از گیرنده باشد (elapsed < 0 تا سقف ۱ ساعت اختلاف ساعت)، منقضی محسوب نمی‌شود.
+   */
+  static isKeyExchangeExpired(
+    bundle,
+    ttlMs = CONSTANTS.KEY_EXCHANGE_TTL_MS,
+    now = Date.now()
+  ) {
+    if (!bundle) return true;
+    if (!Number.isFinite(bundle.timestamp) || bundle.timestamp <= 0) {
+      return true;
+    }
+    const elapsed = now - bundle.timestamp;
+    if (elapsed > ttlMs) return true;
+    return false;
+  }
+
+  /**
+   * ساخت پیام تبادل کلید امضاشده و زمان‌دار (نسخه ۲):
+   * PARDAG-KEY:2:<EncPubKey>:<SigPubKey>:<ChatUID>:<Timestamp>:<Signature>[:<EcdhPubKey>[:<Role>:<SessionId>:<AckForFingerprint>]]
+   */
+  static async formatSignedKeyExchange(identity, chatUid = "", timestampOrOptions = Date.now(), extraOptions = {}) {
+    const opts =
+      typeof timestampOrOptions === "object" && timestampOrOptions !== null
+        ? timestampOrOptions
+        : { timestamp: timestampOrOptions, ...(extraOptions || {}) };
+
+    const safeUid = String(chatUid || "").replace(/[^0-9a-zA-Z_-]/g, "");
+    const ts = Number.isFinite(opts.timestamp) ? Math.trunc(opts.timestamp) : Date.now();
+    const ecdhSpki = identity.ecdh?.publicKeySpki || "";
+    const role = ["SYN", "ACK", "REJECT", "ROTATE"].includes(opts.role) ? opts.role : "";
+    const sessionId = String(opts.sessionId || "").replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 24);
+    const ackForFingerprint = String(opts.ackForFingerprint || "")
+      .replace(/[^0-9A-Fa-f]/g, "")
+      .toUpperCase()
+      .slice(0, 16);
+
+    let signedPayload;
+    if (role) {
+      signedPayload = `${CONSTANTS.PREFIXES.KEY_EXCHANGE}${CONSTANTS.SIGNED_KEY_EXCHANGE_VERSION}:${identity.encryption.publicKeySpki}:${identity.signing.publicKeySpki}:${safeUid}:${ts}:${ecdhSpki}:${role}:${sessionId}:${ackForFingerprint}`;
+    } else if (ecdhSpki) {
+      signedPayload = `${CONSTANTS.PREFIXES.KEY_EXCHANGE}${CONSTANTS.SIGNED_KEY_EXCHANGE_VERSION}:${identity.encryption.publicKeySpki}:${identity.signing.publicKeySpki}:${safeUid}:${ts}:${ecdhSpki}`;
+    } else {
+      signedPayload = `${CONSTANTS.PREFIXES.KEY_EXCHANGE}${CONSTANTS.SIGNED_KEY_EXCHANGE_VERSION}:${identity.encryption.publicKeySpki}:${identity.signing.publicKeySpki}:${safeUid}:${ts}`;
+    }
+
+    const signingKey = await this.importEcdsaPrivateKey(identity.signing.privateKeyJwk);
+    const sigBuffer = await crypto.subtle.sign(
+      { name: "ECDSA", hash: CONSTANTS.RSA_HASH },
+      signingKey,
+      this.encoder.encode(signedPayload)
+    );
+    const signatureBase64 = this.bufferToBase64(sigBuffer);
+
+    if (role) {
+      return (
+        `${CONSTANTS.PREFIXES.KEY_EXCHANGE}${CONSTANTS.SIGNED_KEY_EXCHANGE_VERSION}:` +
+        `${identity.encryption.publicKeySpki}:${identity.signing.publicKeySpki}:` +
+        `${safeUid}:${ts}:${signatureBase64}:${ecdhSpki}:${role}:${sessionId}:${ackForFingerprint}`
+      );
+    }
+
+    if (ecdhSpki) {
+      return (
+        `${CONSTANTS.PREFIXES.KEY_EXCHANGE}${CONSTANTS.SIGNED_KEY_EXCHANGE_VERSION}:` +
+        `${identity.encryption.publicKeySpki}:${identity.signing.publicKeySpki}:` +
+        `${safeUid}:${ts}:${signatureBase64}:${ecdhSpki}`
+      );
+    }
+
+    return `${signedPayload}:${signatureBase64}`;
+  }
+
+  /**
+   * تجزیه سخت‌گیرانه پیام تبادل کلید (پشتیبانی از PARDAG-KEY و BALEENC-KEY).
+   */
   static parseKeyExchange(text) {
-    const clean = CONSTANTS.stripFormatting(text);
+    if (!text) return null;
+    const clean = CONSTANTS.stripFormatting(text).trim();
     const match = clean.match(CONSTANTS.KEY_EXCHANGE_REGEX);
     if (!match) return null;
 
-    const encryptionPublicKeySpki = match[1].replace(/\s+/g, "");
-    const signingPublicKeySpki = match[2].replace(/\s+/g, "");
+    const usedPrefix = clean.startsWith(CONSTANTS.LEGACY_PREFIXES.KEY_EXCHANGE)
+      ? CONSTANTS.LEGACY_PREFIXES.KEY_EXCHANGE
+      : CONSTANTS.PREFIXES.KEY_EXCHANGE;
+
+    const version = Number(match[1]);
+    const encryptionPublicKeySpki = (match[2] || "").replace(/\s+/g, "");
+    const signingPublicKeySpki = (match[3] || "").replace(/\s+/g, "");
     if (!encryptionPublicKeySpki || !signingPublicKeySpki) return null;
 
-    return { encryptionPublicKeySpki, signingPublicKeySpki };
+    const chatUid = match[4] !== undefined ? match[4] : null;
+    const timestamp = match[5] !== undefined ? Number(match[5]) : null;
+    const signature = match[6] ? match[6].replace(/\s+/g, "") : null;
+    const ecdhPublicKeySpki = match[7] ? match[7].replace(/\s+/g, "") : null;
+    const role = match[8] || null;
+    const sessionId = match[9] !== undefined ? match[9] : null;
+    const ackForFingerprint = match[10] ? match[10].toUpperCase() : null;
+
+    if (version === 2 && (!timestamp || !signature)) {
+      return null;
+    }
+
+    let signedPayload = null;
+    if (timestamp !== null && signature) {
+      if (role) {
+        signedPayload = `${usedPrefix}${version}:${encryptionPublicKeySpki}:${signingPublicKeySpki}:${chatUid || ""}:${timestamp}:${ecdhPublicKeySpki || ""}:${role}:${sessionId || ""}:${ackForFingerprint || ""}`;
+      } else if (ecdhPublicKeySpki) {
+        signedPayload = `${usedPrefix}${version}:${encryptionPublicKeySpki}:${signingPublicKeySpki}:${chatUid || ""}:${timestamp}:${ecdhPublicKeySpki}`;
+      } else {
+        signedPayload = `${usedPrefix}${version}:${encryptionPublicKeySpki}:${signingPublicKeySpki}:${chatUid || ""}:${timestamp}`;
+      }
+    }
+
+    return {
+      version,
+      encryptionPublicKeySpki,
+      signingPublicKeySpki,
+      ecdhPublicKeySpki: ecdhPublicKeySpki || null,
+      chatUid,
+      timestamp,
+      signature,
+      role: role || "SYN",
+      hasExplicitRole: Boolean(role),
+      sessionId: sessionId || null,
+      ackForFingerprint: ackForFingerprint || null,
+      signedPayload
+    };
+  }
+
+  /**
+   * اعتبارسنجی کامل بسته تبادل کلید:
+   * نکته مهم در پیام‌رسان بله: در چت ۱:۱، پارامتر uid در آدرس مرورگر هر کاربر برابر با شناسه کاربری طرف مقابل است
+   * (کاربر الف uid=B را می‌بیند و کاربر ب uid=A را می‌بیند)؛ بنابراین مقایسه مستقیم bundle.chatUid با expectedChatUid
+   * به صورت پیش‌فرض غیرفعال است (مگر اینکه options.strictChatMatch صریحاً فعال شود) تا خطای کاذب «متعلق به این چت نیست» رخ ندهد.
+   */
+  static async verifyKeyExchange(textOrBundle, expectedChatUid = null, options = {}) {
+    const bundle =
+      typeof textOrBundle === "string"
+        ? this.parseKeyExchange(textOrBundle)
+        : textOrBundle;
+
+    if (!bundle) {
+      throw new Error("INVALID_KEY_EXCHANGE_FORMAT");
+    }
+
+    await this.importRsaPublicKey(bundle.encryptionPublicKeySpki);
+    const verifyKey = await this.importEcdsaPublicKey(bundle.signingPublicKeySpki);
+
+    if (bundle.ecdhPublicKeySpki) {
+      await this.importEcdhPublicKey(bundle.ecdhPublicKeySpki);
+    }
+
+    if (bundle.signature && bundle.signedPayload) {
+      if (
+        options.strictChatMatch &&
+        expectedChatUid &&
+        bundle.chatUid &&
+        String(bundle.chatUid).trim() !== String(expectedChatUid).trim()
+      ) {
+        throw new Error("KEY_EXCHANGE_CHAT_MISMATCH");
+      }
+
+      const sigValid = await crypto.subtle.verify(
+        { name: "ECDSA", hash: CONSTANTS.RSA_HASH },
+        verifyKey,
+        this.base64ToBuffer(bundle.signature),
+        this.encoder.encode(bundle.signedPayload)
+      );
+
+      if (!sigValid) {
+        throw new Error("KEY_EXCHANGE_INVALID_SIGNATURE");
+      }
+    } else if (options.requireSignature) {
+      throw new Error("KEY_EXCHANGE_UNSIGNED");
+    }
+
+    const isExpired = this.isKeyExchangeExpired(
+      bundle,
+      options.ttlMs ?? CONSTANTS.KEY_EXCHANGE_TTL_MS,
+      options.now ?? Date.now()
+    );
+
+    if (options.enforceFreshness && isExpired) {
+      throw new Error("KEY_EXCHANGE_EXPIRED");
+    }
+
+    const fingerprint = await this.getIdentityFingerprint(
+      bundle.encryptionPublicKeySpki,
+      bundle.signingPublicKeySpki
+    );
+
+    return {
+      ...bundle,
+      fingerprint,
+      isExpired,
+      signatureVerified: Boolean(bundle.signature && bundle.signedPayload)
+    };
   }
 
   /**
    * کد امنیتی مشترک برای مقایسه شفاهی/حضوری توسط دو طرف.
+   * بر اساس کلیدهای عمومی مرتب‌شده دو طرف محاسبه می‌شود تا مستقل از تفاوت uid در URL دو کاربر، در هر دو سمت یکسان باشد.
    */
   static async computeSafetyNumber(ownIdentity, peer) {
     const own = `ENC:${ownIdentity.encryption.publicKeySpki}|SIG:${ownIdentity.signing.publicKeySpki}`;
     const other = `ENC:${peer.encryptionPublicKeySpki}|SIG:${peer.signingPublicKeySpki}`;
     const [first, second] = [own, other].sort();
 
-    const data = this.encoder.encode(`${first}|${second}|${peer.chatUid || ""}`);
+    const data = this.encoder.encode(`${first}|${second}`);
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     const hex = this.hex(hashBuffer).slice(0, 32);
     return hex.match(/.{1,4}/g).join(" ");

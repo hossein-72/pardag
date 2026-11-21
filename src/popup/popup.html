@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>رمزنگاری چت بله</title>
+  <title>رمزنگاری سرتاسری پردگ</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -10,18 +10,28 @@
     <header class="app-header">
       <div class="header-title">
         <span class="logo-icon">🔒</span>
-        <h1>رمزنگاری سرتاسری بله</h1>
+        <h1>رمزنگاری سرتاسری پردگ</h1>
       </div>
-      <p class="subtitle">رمزنگاری پیام‌های متنی در لایه کاربرد (E2EE)</p>
+      <p class="subtitle">افزونه رمزنگاری پیام‌رسان‌های تحت وب</p>
     </header>
 
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="tab-add-chat">افزودن چت</button>
-      <button class="tab-btn" data-tab="tab-chats-list">لیست چت‌ها <span id="chats-count" class="badge">۰</span></button>
-      <button class="tab-btn" data-tab="tab-keys">تولید کلید و تست</button>
+    <!-- بنر یادآوری پشتیبان‌گیری پس از اولین تبادل کلید موفق -->
+    <div id="backup-reminder-banner" class="backup-reminder-banner" style="display: none;">
+      <span>💾 برای حفظ پیام‌های قدیمی در صورت حذف افزونه، یک فایل پشتیبان بگیرید.</span>
+      <div class="backup-reminder-actions">
+        <button type="button" id="btn-go-backup" class="btn link-btn">پشتیبان‌گیری</button>
+        <button type="button" id="btn-dismiss-backup-reminder" class="onboarding-close" title="بستن">✕</button>
+      </div>
     </div>
 
-    <!-- تب ۱: افزودن / ویرایش چت -->
+    <div class="tabs">
+      <span class="tab-indicator" aria-hidden="true"><span class="tab-indicator-pill"></span></span>
+      <button class="tab-btn active" data-tab="tab-add-chat">افزودن چت</button>
+      <button class="tab-btn" data-tab="tab-chats-list">لیست چت‌ها <span id="chats-count" class="badge">۰</span></button>
+      <button class="tab-btn" data-tab="tab-keys">امنیت و پشتیبان‌گیری</button>
+    </div>
+
+        <!-- تب ۱: افزودن / ویرایش چت -->
     <section id="tab-add-chat" class="tab-content active">
       <div id="detected-uid-banner" class="info-banner" style="display: none;">
         <span>شناسه چت جاری در تب فعال شناسایی شد.</span>
@@ -29,8 +39,8 @@
       </div>
 
       <div id="pending-peer-banner" class="info-banner pending-banner" style="display: none;">
-        <span>مخاطب شما رمزنگاری خودکار را فعال کرده است.</span>
-        <button type="button" id="btn-enable-pending" class="btn link-btn">فعال‌سازی</button>
+        <span>این کاربر قصد تبادل کلید با شما را دارد.</span>
+        <button type="button" id="btn-enable-pending" class="btn link-btn">تایید و اشتراک کلید</button>
       </div>
 
       <form id="chat-form">
@@ -47,27 +57,32 @@
             <label class="mode-option">
               <input type="radio" name="enc-mode" value="rsa" checked>
               <span class="mode-card">
-                <strong>تبادل خودکار کلید (RSA)</strong>
-                <small>بدون نیاز به پسورد مشترک — پیشنهادی</small>
+                <strong>تبادل کلید RSA (با تایید پاپ‌آپ)</strong>
+                <small>درخواست، تایید کاربر هدف و انقضای زمانی</small>
               </span>
             </label>
             <label class="mode-option">
               <input type="radio" name="enc-mode" value="password">
               <span class="mode-card">
                 <strong>پسورد مشترک</strong>
-                <small>سازگار با نسخه‌های قبلی</small>
+                <small>رمز عبور توافقی بین دو طرف</small>
               </span>
             </label>
           </div>
         </div>
 
         <div id="rsa-mode-info" class="info-box">
-          <strong>🔐 رمزنگاری خودکار</strong>
-          <p>
-            هر دو طرف باید این افزونه را نصب داشته باشند. کلیدهای عمومی به‌طور
-            خودکار داخل چت تبادل می‌شوند و نیازی به ارسال پسورد نیست. برای امنیت
-            کامل، کد امنیتی هر چت را با مخاطب مقایسه کنید.
-          </p>
+          <div class="card-header-with-details">
+            <strong>🔐 فرایند تبادل کلید RSA</strong>
+            <div class="details-tooltip-wrap">
+              <button type="button" class="details-btn" aria-label="جزئیات">جزئیات</button>
+              <div class="details-tooltip" role="tooltip">
+                ۱. شما درخواست تبادل کلید می‌دهید.<br>
+                ۲. کاربر هدف یک پنجره پاپ‌آپ دریافت می‌کند که آیا مایل به اشتراک‌گذاری کلید هست یا خیر.<br>
+                ۳. با تایید کاربر هدف، فرایند به اتمام می‌رسد. در صورت عدم پاسخ تا ۱۰ دقیقه، درخواست به‌طور خودکار پایان می‌یابد.
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -88,12 +103,13 @@
           <label for="password">کلید یا پسورد مشترک (حداقل ۸ کاراکتر)</label>
           <div class="input-with-action">
             <input type="password" id="password" placeholder="عبارت عبور مشترک طرفین" required minlength="8">
+            <button type="button" id="btn-gen-pwd-inline" class="btn small icon-btn" title="تولید رمز تصادفی قوی ۲۵۶ بیتی">🎲</button>
             <button type="button" id="btn-toggle-pwd" class="btn small icon-btn" title="نمایش/مخفی‌سازی کلید">👁️</button>
           </div>
-          <small class="field-hint">کلید باید دقیقاً بین شما و مخاطب یکسان باشد.</small>
+          <small class="field-hint">با دکمه 🎲 می‌توانید یک رمز تصادفی قوی بسازید. در صورت تغییر پسورد، پسوردهای قبلی برای خواندن پیام‌های قدیمی حفظ می‌شوند.</small>
         </div>
 
-        <button type="submit" id="btn-submit-chat" class="btn primary full-width">ذخیره و فعال‌سازی رمزنگاری</button>
+        <button type="submit" id="btn-submit-chat" class="btn primary full-width">ارسال درخواست تبادل کلید / ذخیره</button>
         <button type="button" id="btn-cancel-edit" class="btn secondary full-width" style="display: none; margin-top: 6px;">انصراف از ویرایش</button>
       </form>
     </section>
@@ -107,63 +123,129 @@
       <div id="chats-list" class="chats-list"></div>
     </section>
 
-    <!-- تب ۳: تولید کلید و تست رمزنگاری -->
+    <!-- تب ۳: امنیت و پشتیبان‌گیری -->
     <section id="tab-keys" class="tab-content">
-      <div class="warning-box">
-        ⚠️ <strong>هشدار امنیتی:</strong> در حالت «پسورد مشترک»، کلید را فقط از طریق یک کانال امن و خارج از بله به طرف مقابل برسانید. در حالت «تبادل خودکار کلید»، هیچ پسوردی را داخل پیام‌رسان نفرستید؛ اما برای امنیت کامل، کد امنیتی هر چت را با مخاطب مقایسه کنید.
-      </div>
-
       <div class="card">
-        <h4>هویت رمزنگاری شما</h4>
-        <p class="hint">
-          این کلیدها به‌صورت خودکار ساخته می‌شوند و برای تبادل امنیتی و امضای
-          پیام‌ها استفاده می‌شوند.
-        </p>
+        <div class="backup-card-header">
+          <h4>🔐 هویت رمزنگاری شما</h4>
+          <div class="details-tooltip-wrap">
+            <button type="button" class="details-btn" aria-label="جزئیات">جزئیات</button>
+            <div class="details-tooltip" role="tooltip">
+              کلیدهای هویت در مرورگر شما نگهداری می‌شوند. از این بخش می‌توانید اثرانگشت خود را بررسی یا کلیدتان را تعویض کنید.<br><br>
+              کلید قبلی در تاریخچه محلی برای خواندن پیام‌های قدیم حفظ می‌شود و برای ارسال پیام جدید باید دوباره تبادل کلید انجام دهید.
+            </div>
+          </div>
+        </div>
         <div class="fingerprint-row">
-          <span>اثر انگشت هویت:</span>
-          <code id="identity-fingerprint">در حال ساخت...</code>
+          <span>اثر انگشت هویت فعلی:</span>
+          <code id="identity-fingerprint">در حال بارگذاری...</code>
         </div>
-        <small class="field-hint">
-          این اثر انگشت، هویت کلی این نصب افزونه است و در همه چت‌ها یکسان می‌ماند؛
-          کد امنیتی هر چت جداگانه محاسبه می‌شود. برای تأیید هویت، کد امنیتی هر چت
-          را در تب «لیست چت‌ها» با مخاطب مقایسه کنید.
-        </small>
+        <button type="button" id="btn-rotate-identity" class="btn secondary full-width" style="margin-top: 8px;">🔄 تعویض کلید هویت</button>
       </div>
 
-      <div class="card" style="margin-top: 12px;">
-        <h4>تولید کلید تصادفی استاندارد</h4>
-        <p class="hint">کلید تصادفی ۲۵۶ بیتی امن (Base64) تولید کنید:</p>
-        <button id="btn-gen-key" class="btn secondary full-width">تولید کلید تصادفی ۲۵۶ بیتی</button>
-        
-        <div class="input-copy-group">
-          <input type="text" id="generated-key" readonly placeholder="کلید تولیدشده اینجا قرار می‌گیرد...">
-          <button id="btn-copy-key" class="btn small">کپی</button>
+      <div class="card" style="margin-top: 10px;">
+        <div class="backup-card-header">
+          <h4>💾 پشتیبان‌گیری و بازیابی (Export / Import)</h4>
+          <div class="details-tooltip-wrap">
+            <button type="button" class="details-btn" aria-label="جزئیات">جزئیات</button>
+            <div class="details-tooltip" role="tooltip">
+              پیش از حذف افزونه یا تعویض مرورگر، از کلید هویت و سابقه چت‌ها خروجی رمزنگاری‌شده بگیرید تا پیام‌های قدیمی همیشه قابل بازیابی بمانند.
+            </div>
+          </div>
         </div>
 
-        <div class="fingerprint-row">
-          <span>اثر انگشت کلید (Fingerprint):</span>
-          <code id="key-fingerprint">--------</code>
+        <div class="backup-mode-switch" role="tablist">
+          <button type="button" id="btn-mode-export" class="backup-mode-btn active" data-backup-mode="export">📤 خروجی (Export)</button>
+          <button type="button" id="btn-mode-import" class="backup-mode-btn" data-backup-mode="import">📥 بازیابی (Import)</button>
         </div>
+
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label for="backup-password">رمز عبور فایل پشتیبان (حداقل ۸ کاراکتر)</label>
+          <div class="input-with-action">
+            <input type="password" id="backup-password" placeholder="رمز محافظت از فایل پشتیبان">
+            <button type="button" id="btn-toggle-backup-pwd" class="btn small icon-btn" title="نمایش/مخفی‌سازی رمز">👁️</button>
+          </div>
+        </div>
+
+        <div id="backup-panel-export" class="backup-panel">
+          <p class="backup-col-note" style="margin-bottom: 8px;">ساخت و دانلود فایل پشتیبان رمزنگاری‌شده با پسوند <code>.pardag</code></p>
+          <button type="button" id="btn-export-backup" class="btn primary full-width">📤 دانلود فایل پشتیبان رمزنگاری‌شده</button>
+        </div>
+
+        <div id="backup-panel-import" class="backup-panel" style="display: none;">
+          <input type="file" id="import-backup-file" class="backup-file-input-hidden" accept=".pardag,.json,application/json">
+          <label for="import-backup-file" id="import-file-label" class="backup-file-picker" style="margin-bottom: 8px;" title="انتخاب فایل پشتیبان (.pardag)">
+            <span class="backup-file-picker-icon">📁</span>
+            <span id="import-file-name" class="backup-file-picker-text">انتخاب فایل پشتیبان (.pardag)</span>
+          </label>
+          <button type="button" id="btn-import-backup" class="btn secondary full-width">📥 بازیابی هویت و چت‌ها از فایل</button>
+        </div>
+
+        <div id="backup-status" class="backup-status" style="display: none;"></div>
       </div>
 
-      <div class="card" style="margin-top: 12px;">
-        <h4>آزمایشگر رمزنگاری (Self-Test)</h4>
-        <p class="hint">ارزیابی اجرای کامل PBKDF2 (۶۰۰٬۰۰۰ چرخه) و AES-256-GCM:</p>
-        <button id="btn-test-crypto" class="btn secondary full-width">اجرای تست رمزنگاری</button>
-        <pre id="test-result" class="test-output"></pre>
-      </div>
-
-      <div class="card" style="margin-top: 12px;">
-        <h4>آزمایش تبادل خودکار کلید (RSA)</h4>
-        <p class="hint">
-          تولید دو هویت موقت و بررسی رمزنگاری هیبریدی، امضای دیجیتال و رمزگشایی:
-        </p>
-        <button id="btn-test-rsa" class="btn secondary full-width">اجرای تست RSA</button>
-        <pre id="rsa-test-result" class="test-output"></pre>
-      </div>
     </section>
   </div>
 
   <script type="module" src="popup.js"></script>
+
+  <!-- اعلان داخلی پاپ‌آپ (جایگزین alert) -->
+  <div id="popup-toast-container" class="popup-toast-container"></div>
+
+  <!-- دیالوگ تایید داخلی پاپ‌آپ (جایگزین confirm) -->
+  <div id="popup-confirm-backdrop" class="popup-confirm-backdrop" style="display: none;">
+    <div class="popup-confirm-dialog" role="dialog" aria-modal="true">
+      <div class="popup-confirm-header">تأیید عملیات</div>
+      <p id="popup-confirm-message" class="popup-confirm-message"></p>
+      <div class="popup-confirm-actions">
+        <button type="button" id="popup-confirm-ok" class="btn primary small">تأیید</button>
+        <button type="button" id="popup-confirm-cancel" class="btn secondary small">انصراف</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- راهنمای چندمرحله‌ای اولین نصب -->
+  <div id="onboarding-wizard-backdrop" class="onboarding-wizard-backdrop" style="display: none;">
+    <div class="onboarding-wizard-dialog" role="dialog" aria-modal="true">
+      <div class="onboarding-wizard-tabs">
+        <span class="wizard-step-tab active" data-step="0">۱. معرفی</span>
+        <span class="wizard-step-tab" data-step="1">۲. فرایند رمزنگاری</span>
+        <span class="wizard-step-tab" data-step="2">۳. امنیت و پشتیبان</span>
+      </div>
+
+      <div class="onboarding-wizard-body">
+        <div class="wizard-pane active" data-step="0">
+          <h4>👋 به رمزنگاری سرتاسری پردگ خوش آمدید</h4>
+          <p>پردگ پیام‌های متنی شما در پیام‌رسان تحت وب بله را پیش از ارسال در مرورگر رمزنگاری می‌کند.</p>
+          <ul class="wizard-list">
+            <li>هر دو طرف گفتگو باید افزونه <strong>پردگ</strong> را روی مرورگر خود نصب داشته باشند.</li>
+            <li>کلیدهای رمزنگاری تنها در مرورگر شما نگهداری می‌شوند و به هیچ سروری ارسال نمی‌شوند.</li>
+          </ul>
+        </div>
+
+        <div class="wizard-pane" data-step="1">
+          <h4>🔐 نحوه رمزنگاری گفتگوها</h4>
+          <ul class="wizard-list">
+            <li><strong>چت‌های خصوصی ۱:۱ (تبادل کلید RSA):</strong> درخواست تبادل کلید را ارسال کنید؛ مخاطب با پاپ‌آپ آن را تایید می‌کند (مهلت ۱۰ دقیقه) و چت به‌صورت خودکار رمزنگاری می‌شود.</li>
+            <li><strong>گروه‌ها (پسورد مشترک):</strong> در گروه‌ها یا در صورت تمایل در چت‌های خصوصی، از روش پسورد مشترک (حداقل ۸ کاراکتر) استفاده کنید.</li>
+          </ul>
+        </div>
+
+        <div class="wizard-pane" data-step="2">
+          <h4>🛡️ تأیید هویت و پشتیبان‌گیری</h4>
+          <ul class="wizard-list">
+            <li>در تب <strong>«لیست چت‌ها»</strong> می‌توانید کد امنیتی ۳۲ کاراکتری را با مخاطب مقایسه و تایید کنید.</li>
+            <li>پیش از حذف افزونه یا تعویض مرورگر، از تب <strong>«امنیت و پشتیبان‌گیری»</strong> فایل پشتیبان (<code>.pardag</code>) بگیرید تا پیام‌های قدیمی همیشه قابل خواندن بمانند.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="onboarding-wizard-actions">
+        <button type="button" id="wizard-prev-btn" class="btn secondary small" style="display: none;">قبلی</button>
+        <button type="button" id="wizard-next-btn" class="btn primary small">بعدی</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Bale Chat E2EE (Application-Layer)",
-  "version": "1.4.0",
-  "description": "رمزنگاری سرتاسری (AES-256-GCM + RSA) برای چتهای منتخب در پیامرسان تحت وب بله",
+  "name": "Pardag Chat E2EE (Application-Layer)",
+  "version": "1.1.0",
+  "description": "رمزنگاری سرتاسری (AES-256-GCM + RSA) برای پیام‌رسان‌های تحت وب",
   "permissions": [
     "storage"
   ],
@@ -15,21 +15,54 @@
   },
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "تنظیمات رمزنگاری بله"
+    "default_title": "تنظیمات رمزنگاری پردگ",
+    "default_icon": {
+      "16": "src/icons/icon16.png",
+      "32": "src/icons/icon32.png",
+      "48": "src/icons/icon48.png",
+      "128": "src/icons/icon128.png"
+    }
   },
   "content_scripts": [
     {
-      "matches": ["https://web.bale.ai/*"],
-      "js": ["src/content/loader.js"],
-      "css": ["src/content/ui/styles.css"],
+      "matches": [
+        "https://web.bale.ai/*"
+      ],
+      "js": [
+        "src/content/websocket-draft-guard.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://web.bale.ai/*"
+      ],
+      "js": [
+        "src/content/loader.js"
+      ],
+      "css": [
+        "src/content/ui/styles.css"
+      ],
       "run_at": "document_idle",
       "world": "ISOLATED"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/*"],
-      "matches": ["https://web.bale.ai/*"]
+      "resources": [
+        "src/*"
+      ],
+      "matches": [
+        "https://web.bale.ai/*"
+      ]
     }
-  ]
+  ],
+  "icons": {
+    "16": "src/icons/icon16.png",
+    "32": "src/icons/icon32.png",
+    "48": "src/icons/icon48.png",
+    "128": "src/icons/icon128.png"
+  }
 }

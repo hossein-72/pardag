@@ -8,7 +8,7 @@
   gap: 6px;
   padding: 6px 12px;
   border-radius: 20px;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
@@ -52,7 +52,7 @@
   margin: 4px 6px;
   padding: 5px 10px;
   border-radius: 16px;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
@@ -82,6 +82,26 @@
   color: #4338ca;
 }
 
+/* میزبان ایمن در برابر Virtual Scroll و آشتی DOM در React */
+.bale-enc-host {
+  font-size: 0 !important;
+  line-height: 0 !important;
+  color: transparent !important;
+}
+
+.bale-enc-host > *:not(.bale-enc-ui-root) {
+  display: none !important;
+}
+
+.bale-enc-host > .bale-enc-ui-root {
+  display: inline-block;
+  width: 100%;
+  font-size: var(--bale-enc-font-size, 13.5px) !important;
+  line-height: 1.6 !important;
+  color: var(--bale-enc-text-color, inherit) !important;
+  vertical-align: middle;
+}
+
 /* نمایش پیام‌های رمزگشایی‌شده */
 .bale-enc-container {
   display: inline-block;
@@ -97,13 +117,16 @@
   border-radius: 4px;
   padding: 1px 6px;
   margin-bottom: 4px;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .bale-enc-preview {
   display: inline-block;
   color: #059669;
+  font-size: 12px;
+  line-height: 1.4;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -112,22 +135,25 @@
   color: #dc2626 !important;
   font-style: normal;
   font-size: 11.5px;
+  line-height: 1.5;
   background: rgba(239, 68, 68, 0.09);
   border: 1px solid rgba(239, 68, 68, 0.25);
   padding: 3px 8px;
   border-radius: 5px;
   display: inline-block;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 .bale-enc-plaintext {
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--bale-enc-font-size, 13.5px);
+  color: var(--bale-enc-text-color, #0f172a);
   line-height: 1.6;
 }
 
-/* وضعیت‌های تبادل خودکار کلید */
+/* وضعیت‌های تبادل کلید */
 #bale-enc-floating-lock-btn.pending,
 .bale-enc-lock-btn.pending {
   background-color: rgba(59, 130, 246, 0.14);
@@ -186,7 +212,8 @@
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: #475569;
   background: rgba(148, 163, 184, 0.14);
   border: 1px dashed rgba(100, 116, 139, 0.4);
@@ -212,7 +239,7 @@
 .bale-enc-toast {
   direction: rtl;
   text-align: right;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.7;
@@ -255,4 +282,392 @@
   border-right-color: #3b82f6;
   background: #eff6ff;
   color: #1e40af;
+}
+
+/* پوشش قفل اتمی کادر پیام در حین ارسال بسته تبادل کلید */
+#bale-enc-composer-lock-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  direction: rtl;
+  padding: 6px 12px;
+  margin: 4px 8px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.12), rgba(16, 185, 129, 0.12));
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  color: #1e3a8a;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  z-index: 1002;
+  user-select: none;
+}
+
+#bale-enc-composer-lock-overlay .bale-enc-step-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #1d4ed8;
+  color: #ffffff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-bale-enc-locked="1"] {
+  pointer-events: none !important;
+  opacity: 0.65 !important;
+}
+
+/* دکمه صریح «درخواست تبادل کلید» در نوار چت */
+#bale-enc-start-handshake-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 4px;
+  padding: 5px 11px;
+  border-radius: 16px;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid #2563eb;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: all 0.2s ease;
+  user-select: none;
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+#bale-enc-start-handshake-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+/* نوار سوال تایید یا رد اشتراک‌گذاری کلید در کامپوزر */
+#bale-enc-consent-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  direction: rtl;
+  padding: 9px 14px;
+  margin: 6px 8px;
+  border-radius: 12px;
+  background: #eff6ff;
+  border: 1.5px solid #3b82f6;
+  color: #1e3a8a;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
+  z-index: 1001;
+}
+
+#bale-enc-consent-prompt.waiting {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+#bale-enc-consent-prompt.key-change {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.bale-enc-consent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 220px;
+}
+
+.bale-enc-consent-title {
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.bale-enc-consent-subtitle {
+  font-weight: 500;
+  font-size: 11px;
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+.bale-enc-consent-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.bale-enc-consent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.bale-enc-consent-btn.accept {
+  background: #10b981;
+  color: #ffffff;
+  border-color: #059669;
+}
+
+.bale-enc-consent-btn.accept:hover {
+  background: #059669;
+}
+
+.bale-enc-consent-btn.reject {
+  background: #ffffff;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.bale-enc-consent-btn.reject:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+
+.bale-enc-consent-btn.secondary {
+  background: #ffffff;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.bale-enc-consent-btn.secondary:hover {
+  background: #fef3c7;
+}
+
+/* پنجره Pop-up مستقل برای کاربر هدف هنگام دریافت درخواست تبادل کلید RSA */
+#bale-enc-key-request-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999998;
+  padding: 16px;
+  direction: rtl;
+}
+
+#bale-enc-key-request-modal {
+  width: min(440px, 100%);
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.32);
+  padding: 20px;
+  font-family: 'Vazirmatn', 'Vazir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #0f172a;
+  animation: bale-enc-modal-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes bale-enc-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.bale-enc-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.bale-enc-modal-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.bale-enc-modal-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e3a8a;
+  margin: 0;
+}
+
+.bale-enc-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.bale-enc-modal-question {
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: #0f172a;
+  margin: 0;
+}
+
+.bale-enc-modal-meta {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.bale-enc-modal-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #475569;
+}
+
+.bale-enc-modal-meta-row strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.bale-enc-modal-meta-row code {
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+}
+
+.bale-enc-modal-meta-row.timer {
+  padding-top: 6px;
+  border-top: 1px dashed #cbd5e1;
+  color: #b45309;
+}
+
+.bale-enc-modal-timer-val {
+  color: #d97706 !important;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+}
+
+.bale-enc-modal-note {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #64748b;
+  margin: 0;
+}
+
+.bale-enc-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bale-enc-modal-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.bale-enc-modal-btn.accept {
+  background: #10b981;
+  color: #ffffff;
+  border-color: #059669;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.25);
+}
+
+.bale-enc-modal-btn.accept:hover {
+  background: #059669;
+}
+
+.bale-enc-modal-btn.reject {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.bale-enc-modal-btn.reject:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+.bale-enc-restore-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 4px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  border: 1px solid #ef4444;
+  background: #ffffff;
+  color: #b91c1c;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bale-enc-restore-link:hover {
+  background: #fee2e2;
+}
+
+
+/* اصلاح کامل راست‌به‌چپ (RTL) و ترتیب نمایش متون ترکیبی فارسی و انگلیسی */
+#bale-enc-floating-lock-btn,
+.bale-enc-lock-btn,
+#bale-enc-chat-settings-btn,
+#bale-enc-consent-prompt,
+#bale-enc-composer-lock-overlay,
+#bale-enc-key-request-modal,
+.bale-enc-toast {
+  direction: rtl !important;
+  unicode-bidi: isolate !important;
+  text-align: right !important;
+}
+
+.bale-enc-host > .bale-enc-ui-root,
+.bale-enc-container,
+.bale-enc-badge,
+.bale-enc-preview,
+.bale-enc-error,
+.bale-enc-key-exchange {
+  direction: rtl !important;
+  unicode-bidi: isolate !important;
+  text-align: right !important;
+}
+
+.bale-enc-plaintext {
+  direction: rtl !important;
+  unicode-bidi: plaintext !important;
+  text-align: start !important;
 }
